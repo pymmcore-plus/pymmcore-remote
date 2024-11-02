@@ -33,7 +33,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = ["Pyro5", "pymmcore-plus"]
 
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies
 [project.optional-dependencies]
@@ -41,11 +41,14 @@ test = ["pytest", "pytest-cov"]
 dev = [
     "ipython",
     "mypy",
-    "pdbpp",  # https://github.com/pdbpp/pdbpp
+    "pdbpp",      # https://github.com/pdbpp/pdbpp
     "pre-commit",
-    "rich",  # https://github.com/Textualize/rich
+    "rich",       # https://github.com/Textualize/rich
     "ruff",
 ]
+
+[project.scripts]
+mmcore-remote = "pymmcore_remote.server:main"
 
 [project.urls]
 homepage = "https://github.com/tlambert03/pymmcore-remote"
@@ -76,6 +79,7 @@ select = [
     "TID",  # flake8-tidy-imports
 ]
 ignore = [
+    "D100", # Missing docstring in public module
     "D401", # First line should be in imperative mood (remove to opt in)
 ]
 
@@ -85,7 +89,7 @@ ignore = [
 # https://docs.astral.sh/ruff/formatter/
 [tool.ruff.format]
 docstring-code-format = true
-skip-magic-trailing-comma = false  # default is false
+skip-magic-trailing-comma = false # default is false
 
 # https://mypy.readthedocs.io/en/stable/config_file.html
 [tool.mypy]
@@ -119,8 +123,4 @@ exclude_lines = [
 source = ["pymmcore_remote"]
 
 [tool.check-manifest]
-ignore = [
-    ".pre-commit-config.yaml",
-    ".ruff_cache/**/*",
-    "tests/**/*",
-]
+ignore = [".pre-commit-config.yaml", ".ruff_cache/**/*", "tests/**/*"]
