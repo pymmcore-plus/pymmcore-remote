@@ -6,19 +6,19 @@ pytest.importorskip("Pyro5")
 from pymmcore_remote.server import RemoteCMMCorePlus, serve  # noqa
 
 
-def test_server():
-    core = pyroCMMCore()
+def test_server() -> None:
+    core = RemoteCMMCorePlus()
     core.loadSystemConfiguration()
 
     assert core.getDeviceAdapterSearchPaths()
     cb = MagicMock()
-    core.connect_remote_callback(cb)
+    core.connect_client_side_callback(cb)
 
     core.emit_signal("propertiesChanged")
-    core.disconnect_remote_callback(cb)
+    core.disconnect_client_side_callback(cb)
 
 
-def test_serve(monkeypatch):
+def test_serve(monkeypatch) -> None:
     import sys
 
     monkeypatch.setattr(sys, "argv", ["serve", "-p", "65111"])

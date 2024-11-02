@@ -3,7 +3,8 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 
 import numpy as np
 import Pyro5.api
@@ -18,17 +19,16 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from pymmcore_plus import CMMCorePlus
-    from pytestqt.qtbot import QtBot
 
 
 @pytest.fixture(scope="session")
-def server_process() -> subprocess.Popen:
+def server_process() -> Iterator[subprocess.Popen]:
     # create a server in a separate process
     proc = subprocess.Popen([sys.executable, "-m", server.__name__])
     uri = f"PYRO:{Pyro5.core.DAEMON_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
     remote_daemon = Pyro5.api.Proxy(uri)
 
-    timeout = 4
+    timeout = 4.0
     while timeout > 0:
         try:
             remote_daemon.ping()
@@ -42,43 +42,36 @@ def server_process() -> subprocess.Popen:
 
 
 @pytest.fixture
-def proxy(server_process) -> Iterator[CMMCorePlus]:
+def proxy(server_process: Any) -> Iterator[CMMCorePlus]:
     with MMCoreProxy() as mmcore:
         mmcore.loadSystemConfiguration()
         yield mmcore
 
 
 def test_client(proxy: CMMCorePlus) -> None:
-    assert str(proxy._pyroUri) == server.DEFAULT_URI
+    assert str(proxy._pyroUri) == server.DEFAULT_URI  # type: ignore
     proxy.getConfigGroupState("Channel")
 
 
-def test_mda(qtbot: QtBot, proxy: CMMCorePlus) -> None:
+def test_mda(proxy: CMMCorePlus) -> None:
     mda = MDASequence(time_plan={"interval": 0.1, "loops": 2})
 
-    def _check_frame(img, event):
-        return (
-            isinstance(img, np.ndarray)
-            and isinstance(event, MDAEvent)
-            and event.sequence == mda
-            and event.sequence is not mda
-        )
+    seq_started_mock = Mock()
+    frame_ready_mock = Mock()
+    seq_finished_mock = Mock()
 
-    def _check_seq(obj):
-        return obj.uid == mda.uid
+    proxy.mda.events.sequenceStarted.connect(seq_started_mock)
+    proxy.mda.events.frameReady.connect(frame_ready_mock)
+    proxy.mda.events.sequenceFinished.connect(seq_finished_mock)
 
-    signals = [
-        (proxy.mda.events.sequenceStarted, "started"),
-        (proxy.mda.events.frameReady, "frameReady1"),
-        (proxy.mda.events.frameReady, "frameReady2"),
-        (proxy.mda.events.sequenceFinished, "finishd"),
-    ]
-    checks = [_check_seq, _check_frame, _check_frame, _check_seq]
-
-    with qtbot.waitSignals(signals, check_params_cbs=checks, order="strict"):
-        thread = proxy.run_mda(mda)
-    thread.join()
-    breakpoint()
+    proxy.mda.run(mda)
+    seq_started_mock.assert_called_once()
+    for call in frame_ready_mock.call_args_list:
+        assert isinstance(call[0][0], np.ndarray)
+        assert isinstance(call[0][1], MDAEvent)
+        assert call[0][1].sequence == mda
+        assert call[0][1].sequence is not mda
+    seq_finished_mock.assert_called_once()
 
 
 # test canceling while waiting for the next time point
@@ -97,36 +90,13 @@ def test_mda_cancel(proxy: CMMCorePlus) -> None:
 # TODO: this test may accidentally pass if qtbot is created before this
 
 
-def test_cb_without_qt(qtbot: QtBot, proxy: CMMCorePlus) -> None:
-    """This tests that we can call a core method within a callback
-
-    currently only works for Qt callbacks... need to figure out synchronous approach.
-    """
+def test_cb(proxy: CMMCorePlus) -> None:
+    """This tests that we can call a core method within a callback"""
     assert isinstance(proxy.events, ClientSideCMMCoreSignaler)
-    cam = [None]
 
-    @proxy.events.systemConfigurationLoaded.connect
-    def _cb() -> None:
-        cam[0] = proxy.getCameraDevice()
-
-    with qtbot.waitSignal(proxy.events.systemConfigurationLoaded, timeout=500):
-        proxy.loadSystemConfiguration()
-    assert cam[0] == "Camera"
-
-
-# def test_cb_with_qt(qtbot, proxy):
-#     """This tests that we can call a core method within a callback
-
-#     currently only works for Qt callbacks... need to figure out synchronous approach.
-#     """
-#     # because we're running with qt active
-#     assert isinstance(proxy.events, QCoreSignaler)
-#     cam = [None]
-
-#     @proxy.events.systemConfigurationLoaded.connect
-#     def _cb():
-#         cam[0] = proxy.getCameraDevice()
-
-#     with qtbot.waitSignal(proxy.events.systemConfigurationLoaded):
-#         proxy.loadSystemConfiguration()
-#     assert cam[0] == "Camera"
+    mock = Mock()
+    proxy.events.systemConfigurationLoaded.connect(mock)
+    proxy.loadSystemConfiguration()
+    while not mock.called:
+        time.sleep(0.1)
+    mock.assert_called_once()
