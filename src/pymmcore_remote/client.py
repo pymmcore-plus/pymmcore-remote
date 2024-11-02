@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import contextlib
 import threading
 from typing import TYPE_CHECKING, Any, cast
 
 import Pyro5.api
-from psygnal import SignalInstance
 from pymmcore_plus.core.events import CMMCoreSignaler
 from pymmcore_plus.mda.events import MDASignaler
 
@@ -13,14 +11,14 @@ from . import server
 from ._serialize import register_serializers
 
 if TYPE_CHECKING:
+    from psygnal import SignalInstance
     from pymmcore_plus import CMMCorePlus
     from pymmcore_plus.mda import MDARunner
 
 
 class MDARunnerProxy(Pyro5.api.Proxy):
-    def __init__(self, host: str, port: int, cb_thread: DaemonThread) -> None:
-        uri = f"PYRO:{server.MDA_RUNNER_NAME}@{host}:{port}"
-        super().__init__(uri)
+    def __init__(self, mda_runner_uri: Any, cb_thread: DaemonThread) -> None:
+        super().__init__(mda_runner_uri)
         events = ClientSideMDASignaler()
         object.__setattr__(self, "events", events)
         cb_thread.api_daemon.register(events)
@@ -49,7 +47,11 @@ class MMCoreProxy(Pyro5.api.Proxy):
         cb_thread.api_daemon.register(events)
         self.connect_client_side_callback(events)  # must come after register()
 
-        object.__setattr__(self, "_mda_runner", MDARunnerProxy(host, port, cb_thread))
+        # Retrieve the existing MDARunner URI instead of creating a new one
+        mda_runner_uri = self.get_mda_runner_uri()
+        object.__setattr__(
+            self, "_mda_runner", MDARunnerProxy(mda_runner_uri, cb_thread)
+        )
         cb_thread.start()
 
     # this is a lie... but it's more useful than -> Self
@@ -74,8 +76,8 @@ class ClientSideCMMCoreSignaler(CMMCoreSignaler):
 
 class ClientSideMDASignaler(MDASignaler):
     receive_server_callback = receive_server_callback
-# 
-# 
+
+
 class DaemonThread(threading.Thread):
     def __init__(self, name: str = "DaemonThread"):
         self.api_daemon = Pyro5.api.Daemon()

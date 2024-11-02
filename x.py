@@ -7,9 +7,10 @@ with MMCoreProxy() as core:
     print(core)
 
     @core.mda.events.frameReady.connect
-    def on_prop_change(frame: np.ndarray, event: MDAEvent, meta: dict):
+    def _onframe(frame: np.ndarray, event: MDAEvent, meta: dict) -> None:
         print(frame.shape, event, meta)
 
     core.loadSystemConfiguration()
     print(core.getLoadedDevices())
-    core.mda.run(MDASequence(time_plan=TIntervalLoops(interval=0.4, loops=4)))
+
+    core.mda.run(MDASequence(time_plan=TIntervalLoops(interval=0.2, loops=8)))

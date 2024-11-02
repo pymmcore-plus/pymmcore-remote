@@ -1,4 +1,4 @@
-"""RPC for pymmcore-plus"""
+"""RPC for pymmcore-plus."""
 
 from importlib.metadata import PackageNotFoundError, version
 
@@ -8,3 +8,7 @@ except PackageNotFoundError:
     __version__ = "uninstalled"
 __author__ = "Talley Lambert"
 __email__ = "talley.lambert@gmail.com"
+
+from .client import MMCoreProxy
+
+__all__ = ["MMCoreProxy"]

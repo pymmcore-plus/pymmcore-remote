@@ -48,7 +48,7 @@ dev = [
 ]
 
 [project.scripts]
-mmcore-remote = "pymmcore_remote.server:main"
+mmcore-remote = "pymmcore_remote.server:serve"
 
 [project.urls]
 homepage = "https://github.com/tlambert03/pymmcore-remote"

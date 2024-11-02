@@ -5,7 +5,8 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Sized
 from multiprocessing.shared_memory import SharedMemory
-from typing import ClassVar, Generic, TypeVar
+import threading
+from typing import Any, ClassVar, Generic, TypeVar
 
 import numpy as np
 import pymmcore
@@ -15,7 +16,7 @@ import useq
 from pymmcore_plus.core import Configuration, Metadata
 
 # https://pyro5.readthedocs.io/en/latest/clientcode.html#serialization
-# Pyro5.config.SERIALIZER = "msgpack"
+Pyro5.config.SERIALIZER = "msgpack"  # msgpack|serpent|json, all work - but not marshal
 T = TypeVar("T")
 
 
@@ -89,8 +90,15 @@ class SerTimeDelta(Serializer[datetime.timedelta]):
         return {"val": str(obj)}
 
     def from_dict(self, classname: str, d: dict) -> datetime.timedelta:
-        breakpoint()
         return datetime.timedelta(d["val"])
+
+
+class SerLock(Serializer[type(threading.Lock())]):
+    def to_dict(self, obj: Any) -> dict:
+        return {"val": str(obj)}
+
+    def from_dict(self, classname: str, d: dict) -> datetime.timedelta:
+        return threading.Lock()
 
 
 class SerCMMError(Serializer[pymmcore.CMMError]):
