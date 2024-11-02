@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 import Pyro5
 import Pyro5.api
+import Pyro5.core
 import Pyro5.errors
 from click import Path
 from pymmcore_plus import CMMCorePlus
@@ -23,14 +24,16 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_URI = f"PYRO:{CORE_NAME}@{DEFAULT_HOST}:{DEFAULT_PORT}"
 
 
-class CallbackProtocol(Protocol):
+class ClientSideCallbackHandler(Protocol):
+    """Protocol for callback handlers on the client side."""
+
     def receive_server_callback(self, signal_name: str, args: tuple) -> None:
         """Will be called by server with name of signal, and tuple of args."""
 
 
 class _CallbackMixin:
     def __init__(self, signal_type: type, events: Any) -> None:
-        self._callback_handlers: set[CallbackProtocol] = set()
+        self._callback_handlers: set[ClientSideCallbackHandler] = set()
 
         for name in {
             name
@@ -42,10 +45,12 @@ class _CallbackMixin:
                 # FIXME: devicePropertyChanged will not work on Remote
                 attr.connect(partial(self.emit_signal, name))
 
-    def connect_client_side_callback(self, handler: CallbackProtocol) -> None:
+    def connect_client_side_callback(self, handler: ClientSideCallbackHandler) -> None:
         self._callback_handlers.add(handler)
 
-    def disconnect_client_side_callback(self, handler: CallbackProtocol) -> None:
+    def disconnect_client_side_callback(
+        self, handler: ClientSideCallbackHandler
+    ) -> None:
         self._callback_handlers.discard(handler)
 
     @Pyro5.api.oneway  # type: ignore [misc]
@@ -62,6 +67,8 @@ class _CallbackMixin:
 @Pyro5.api.behavior(instance_mode="single")
 @wrap_for_pyro
 class RemoteCMMCorePlus(CMMCorePlus, _CallbackMixin):
+    """CMMCorePlus with Pyro5 serialization."""
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         CMMCorePlus.__init__(self, *args, **kwargs)
         _CallbackMixin.__init__(self, CMMCoreSignaler, self.events)
@@ -71,7 +78,8 @@ class RemoteCMMCorePlus(CMMCorePlus, _CallbackMixin):
                 self._mda_runner, "existing_mda_runner"
             )
 
-    def get_mda_runner_uri(self) -> str:
+    def get_mda_runner_uri(self) -> Pyro5.core.URI:
+        """Return the URI of the remote MDARunner instance."""
         return self._mda_runner_uri
 
     def run_mda(  # type: ignore [override]
@@ -90,6 +98,8 @@ class RemoteCMMCorePlus(CMMCorePlus, _CallbackMixin):
 @Pyro5.api.behavior(instance_mode="single")
 @wrap_for_pyro
 class RemoteMDARunner(MDARunner, _CallbackMixin):
+    """MDARunner with Pyro5 serialization."""
+
     def __init__(self) -> None:
         MDARunner.__init__(self)
         _CallbackMixin.__init__(self, MDASignaler, self.events)

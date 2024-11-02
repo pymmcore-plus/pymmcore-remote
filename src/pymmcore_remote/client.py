@@ -17,7 +17,9 @@ if TYPE_CHECKING:
 
 
 class MDARunnerProxy(Pyro5.api.Proxy):
-    def __init__(self, mda_runner_uri: Any, cb_thread: DaemonThread) -> None:
+    """Proxy for MDARunner object on server."""
+
+    def __init__(self, mda_runner_uri: Any, cb_thread: _DaemonThread) -> None:
         super().__init__(mda_runner_uri)
         events = ClientSideMDASignaler()
         object.__setattr__(self, "events", events)
@@ -26,10 +28,13 @@ class MDARunnerProxy(Pyro5.api.Proxy):
 
     # this is a lie... but it's more useful than -> Self
     def __enter__(self) -> MDARunner:
+        """Use as a context manager."""
         return super().__enter__()  # type: ignore [no-any-return]
 
 
 class MMCoreProxy(Pyro5.api.Proxy):
+    """Proxy for CMMCorePlus object on server."""
+
     _mda_runner: MDARunnerProxy
 
     def __init__(
@@ -43,7 +48,7 @@ class MMCoreProxy(Pyro5.api.Proxy):
         events = ClientSideCMMCoreSignaler()
         object.__setattr__(self, "events", events)
 
-        cb_thread = DaemonThread(name="CallbackDaemon")
+        cb_thread = _DaemonThread(name="CallbackDaemon")
         cb_thread.api_daemon.register(events)
         self.connect_client_side_callback(events)  # must come after register()
 
@@ -56,10 +61,12 @@ class MMCoreProxy(Pyro5.api.Proxy):
 
     # this is a lie... but it's more useful than -> Self
     def __enter__(self) -> CMMCorePlus:
+        """Use as a context manager."""
         return super().__enter__()  # type: ignore [no-any-return]
 
     @property
     def mda(self) -> MDARunner:
+        """Return the MDARunner proxy."""
         return self._mda_runner
 
 
@@ -71,14 +78,18 @@ def receive_server_callback(self: Any, signal_name: str, args: tuple) -> None:
 
 
 class ClientSideCMMCoreSignaler(CMMCoreSignaler):
+    """Client-side signaler for CMMCore events."""
+
     receive_server_callback = receive_server_callback
 
 
 class ClientSideMDASignaler(MDASignaler):
+    """Client-side signaler for MDA events."""
+
     receive_server_callback = receive_server_callback
 
 
-class DaemonThread(threading.Thread):
+class _DaemonThread(threading.Thread):
     def __init__(self, name: str = "DaemonThread"):
         self.api_daemon = Pyro5.api.Daemon()
         self._stop_event = threading.Event()

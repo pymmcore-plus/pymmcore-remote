@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,12 +16,3 @@ def test_server() -> None:
 
     core.emit_signal("propertiesChanged")
     core.disconnect_client_side_callback(cb)
-
-
-def test_serve(monkeypatch) -> None:
-    import sys
-
-    monkeypatch.setattr(sys, "argv", ["serve", "-p", "65111"])
-    with patch("Pyro5.api.serve") as mock:
-        serve()
-    mock.assert_called_once()

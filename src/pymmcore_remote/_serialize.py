@@ -1,12 +1,11 @@
 import atexit
 import contextlib
 import datetime
-import threading
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Sized
 from multiprocessing.shared_memory import SharedMemory
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import ClassVar, Generic, TypeVar
 
 import numpy as np
 import pymmcore
@@ -91,14 +90,6 @@ class SerTimeDelta(Serializer[datetime.timedelta]):
 
     def from_dict(self, classname: str, d: dict) -> datetime.timedelta:
         return datetime.timedelta(d["val"])
-
-
-class SerLock(Serializer[type(threading.Lock())]):
-    def to_dict(self, obj: Any) -> dict:
-        return {"val": str(obj)}
-
-    def from_dict(self, classname: str, d: dict) -> datetime.timedelta:
-        return threading.Lock()
 
 
 class SerCMMError(Serializer[pymmcore.CMMError]):

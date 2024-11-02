@@ -36,7 +36,7 @@ def wrap_for_pyro(cls: type[T]) -> type[T]:
         _f.__name__ = name
         return _f
 
-    _dict_ = {}
+    _dict_: dict = {}
     for member_name, obj in chain(*(c.__dict__.items() for c in reversed(cls.mro()))):
         if member_name.startswith("_"):
             continue

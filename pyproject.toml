@@ -124,3 +124,6 @@ source = ["pymmcore_remote"]
 
 [tool.check-manifest]
 ignore = [".pre-commit-config.yaml", ".ruff_cache/**/*", "tests/**/*"]
+
+[tool.typos.default]
+extend-ignore-identifiers-re = ["(?i)Ser"]
