@@ -1,11 +1,11 @@
 import atexit
 import contextlib
 import datetime
+import threading
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Sized
 from multiprocessing.shared_memory import SharedMemory
-import threading
 from typing import Any, ClassVar, Generic, TypeVar
 
 import numpy as np
