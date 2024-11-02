@@ -51,8 +51,8 @@ dev = [
 mmcore-remote = "pymmcore_remote.server:serve"
 
 [project.urls]
-homepage = "https://github.com/tlambert03/pymmcore-remote"
-repository = "https://github.com/tlambert03/pymmcore-remote"
+homepage = "https://github.com/pymmcore-plus/pymmcore-remote"
+repository = "https://github.com/pymmcore-plus/pymmcore-remote"
 
 # https://docs.astral.sh/ruff
 [tool.ruff]
