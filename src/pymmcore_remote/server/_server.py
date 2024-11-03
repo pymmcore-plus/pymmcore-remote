@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 from functools import partial
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Callable, Protocol, cast
 
 import Pyro5
 import Pyro5.api
@@ -127,6 +127,16 @@ def _print(msg: str, color: str = "", bold: bool = False, end: str = "\n") -> No
     print(msg, end=end)
 
 
+def _logger_or_print(level: str = "info") -> Callable[[str], None]:
+    """Get a logger or print function based on the availability of the logger."""
+    try:
+        from pymmcore_plus._logger import logger
+
+        return getattr(logger, level)  # type: ignore
+    except ImportError:
+        return print
+
+
 def serve(
     host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, verbose: bool = False
 ) -> None:
@@ -134,12 +144,7 @@ def serve(
     global GLOBAL_DAEMON
 
     register_serializers()
-    try:
-        from pymmcore_plus._logger import logger
-
-        log = logger.info
-    except ImportError:
-        log = print  # type: ignore
+    log = _logger_or_print("info")
 
     objects: dict[type, str] = {RemoteCMMCorePlus: CORE_NAME}
     with (GLOBAL_DAEMON := Pyro5.api.Daemon(host=host, port=port)):
@@ -157,14 +162,34 @@ def serve(
 @contextlib.contextmanager
 def server_process(
     host: str = DEFAULT_HOST, port: int = DEFAULT_PORT, timeout: float = 3.0
-) -> Iterator[subprocess.Popen]:
-    """Context manager for starting a Pyro5 server in a separate process."""
-    proc = subprocess.Popen(
-        [sys.executable, "-m", __name__, "--host", host, "--port", str(port)]
-    )
+) -> Iterator[subprocess.Popen | None]:
+    """Context manager for starting a Pyro5 server in a separate process.
+
+    If the server is already running, the context manager will yield None, and will
+    not clean up the server process when done.
+    """
+    log = _logger_or_print("info")
 
     uri = f"PYRO:{Pyro5.core.DAEMON_NAME}@{host}:{port}"
     remote_daemon = cast(Pyro5.api.DaemonObject, Pyro5.api.Proxy(uri))
+    with contextlib.suppress(Pyro5.errors.CommunicationError):
+        remote_daemon.ping()
+        # if we get here, the server is already running
+        log(f"Server process at {host}:{port} already running.")
+        yield None
+        return
+
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "pymmcore_remote.server",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
+    )
 
     while timeout > 0:
         try:
@@ -179,6 +204,7 @@ def server_process(
     yield proc
     proc.kill()
     proc.wait()
+    log(f"Server process at {host}:{port} terminated.")
 
 
 def main() -> None:
