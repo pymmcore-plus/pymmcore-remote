@@ -23,6 +23,17 @@ For now, please install from the main branch on github:
 pip install git+https://github.com/pymmcore-plus/pymmcore-remote
 ```
 
+`pymmcore-remote` must be installed on *both* the server (microscope) side, and the client (controller) side.
+
+On the microscope machine, you must also install micromanager device adapters:
+
+```sh
+mmcore install
+```
+
+More detail available in the
+[pymmcore-plus documentation](https://pymmcore-plus.github.io/pymmcore-plus/install/#installing-micro-manager-device-adapters)
+
 ## Usage
 
 Start a server on the machine with the microscope:
@@ -34,8 +45,9 @@ mmcore-remote
 > You can also specify the port with `--port` and the hostname with `--host`.
 Run `mmcore-remote --help` for more options.
 
-Then, in a separate process, connect to the server using
-using `pymmcore_remote.MMCoreProxy`:
+Then, on the client side (or in a separate process), connect to the server using
+using `pymmcore_remote.MMCoreProxy`.  `MMCorePlusProxy` accepts `host` and `port`
+arguments that must match the server (if you overide the defaults).
 
 ```python
 from pymmcore_remote import MMCorePlusProxy
@@ -58,3 +70,8 @@ This package is experimental: The goal is for the API to be identical to that of
 issues may still be undiscovered. Please [open an
 issue](https://github.com/pymmcore-plus/pymmcore-remote/issues/new) if you
 encounter any problems.
+
+Data is currently shared between processes using python's shared memory module,
+which is a fast and efficient way to share memory buffers directly.  However,
+this won't work for network access between different machines, so please open
+an issue to discuss your use case.
