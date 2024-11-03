@@ -1,25 +1,29 @@
-# src/pymmcore_remote/server.py
+from __future__ import annotations
+
 import contextlib
 import subprocess
 import sys
 import time
-from collections.abc import Iterable, Iterator, Sequence
 from functools import partial
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import Pyro5
 import Pyro5.api
 import Pyro5.core
 import Pyro5.errors
-from click import Path
 from pymmcore_plus import CMMCorePlus
 from pymmcore_plus.core.events import CMMCoreSignaler
 from pymmcore_plus.mda import MDAEngine, MDARunner
 from pymmcore_plus.mda.events import MDASignaler
-from useq import MDAEvent
 
 from pymmcore_remote._serialize import register_serializers
 from pymmcore_remote._util import wrap_for_pyro
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
+    from click import Path
+    from useq import MDAEvent
 
 with contextlib.suppress(ImportError):
     from rich import print

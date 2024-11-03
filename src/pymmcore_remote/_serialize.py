@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 import atexit
 import contextlib
 import datetime
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Sized
 from functools import lru_cache
 from multiprocessing.shared_memory import SharedMemory
-from typing import ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar
 
 import numpy as np
 import pymmcore
@@ -14,6 +15,9 @@ import Pyro5
 import Pyro5.api
 import useq
 from pymmcore_plus.core import Configuration, Metadata
+
+if TYPE_CHECKING:
+    from collections.abc import Sized
 
 # https://pyro5.readthedocs.io/en/latest/clientcode.html#serialization
 try:
