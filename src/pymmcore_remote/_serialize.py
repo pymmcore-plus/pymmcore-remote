@@ -4,6 +4,7 @@ import datetime
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Sized
+from functools import lru_cache
 from multiprocessing.shared_memory import SharedMemory
 from typing import ClassVar, Generic, TypeVar
 
@@ -15,7 +16,14 @@ import useq
 from pymmcore_plus.core import Configuration, Metadata
 
 # https://pyro5.readthedocs.io/en/latest/clientcode.html#serialization
-Pyro5.config.SERIALIZER = "msgpack"  # msgpack|serpent|json, all work - but not marshal
+try:
+    import msgpack  # noqa: F401
+
+    # msgpack|serpent|json, all work - but not marshal
+    Pyro5.config.SERIALIZER = "msgpack"
+except ImportError:  # pragma: no cover
+    pass
+
 T = TypeVar("T")
 
 
@@ -162,6 +170,7 @@ def remove_shm_from_resource_tracker() -> None:
         del resource_tracker._CLEANUP_FUNCS["shared_memory"]  # type: ignore [attr-defined]
 
 
+@lru_cache  # only register once
 def register_serializers() -> None:
     remove_shm_from_resource_tracker()
     for i in globals().values():

@@ -4,6 +4,7 @@ import threading
 from typing import TYPE_CHECKING, Any, cast
 
 import Pyro5.api
+import Pyro5.errors
 from pymmcore_plus.core.events import CMMCoreSignaler
 from pymmcore_plus.mda.events import MDASignaler
 
@@ -32,7 +33,7 @@ class MDARunnerProxy(Pyro5.api.Proxy):
         return super().__enter__()  # type: ignore [no-any-return]
 
 
-class MMCoreProxy(Pyro5.api.Proxy):
+class MMCorePlusProxy(Pyro5.api.Proxy):
     """Proxy for CMMCorePlus object on server."""
 
     _mda_runner: MDARunnerProxy
@@ -45,29 +46,45 @@ class MMCoreProxy(Pyro5.api.Proxy):
         register_serializers()
         uri = f"PYRO:{server.CORE_NAME}@{host}:{port}"
         super().__init__(uri)
+
+        # check that the connection is valid
+        try:
+            self._pyroBind()
+        except Pyro5.errors.CommunicationError as e:
+            raise ConnectionRefusedError(
+                f"Failed to connect to server at {uri}.\n"
+                "Is the pymmcore-plus server running? "
+                "You can start it with: 'mmcore-remote'"
+            ) from e
+
+        # create a proxy object to receive and connect CMMCoreSignaler events
+        # here on the client side
         events = ClientSideCMMCoreSignaler()
         object.__setattr__(self, "events", events)
-
+        # create daemon thread to listen for callbacks/signals coming from the server
+        # and register the callback handler
         cb_thread = _DaemonThread(name="CallbackDaemon")
         cb_thread.api_daemon.register(events)
+        # connect our local callback handler to the server's signaler
         self.connect_client_side_callback(events)  # must come after register()
 
-        # Retrieve the existing MDARunner URI instead of creating a new one
-        mda_runner_uri = self.get_mda_runner_uri()
+        # Create a proxy object for the mda_runner as well, passing in the daemon thread
+        # so it too can receive signals from the server
         object.__setattr__(
-            self, "_mda_runner", MDARunnerProxy(mda_runner_uri, cb_thread)
+            self, "_mda_runner", MDARunnerProxy(self.get_mda_runner_uri(), cb_thread)
         )
+        # start the callback-handling thread
         cb_thread.start()
-
-    # this is a lie... but it's more useful than -> Self
-    def __enter__(self) -> CMMCorePlus:
-        """Use as a context manager."""
-        return super().__enter__()  # type: ignore [no-any-return]
 
     @property
     def mda(self) -> MDARunner:
         """Return the MDARunner proxy."""
         return self._mda_runner
+
+    # this is a lie... but it's more useful than -> Self
+    def __enter__(self) -> CMMCorePlus:
+        """Use as a context manager."""
+        return super().__enter__()  # type: ignore [no-any-return]
 
 
 @Pyro5.api.expose  # type: ignore [misc]

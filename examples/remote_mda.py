@@ -1,16 +1,13 @@
 import numpy as np
 from useq import MDAEvent, MDASequence, TIntervalLoops
 
-from pymmcore_remote.client import MMCoreProxy
+from pymmcore_remote import MMCorePlusProxy
 
-with MMCoreProxy() as core:
-    print(core)
+with MMCorePlusProxy() as core:
+    core.loadSystemConfiguration()
 
     @core.mda.events.frameReady.connect
     def _onframe(frame: np.ndarray, event: MDAEvent, meta: dict) -> None:
-        print(frame.shape, event, meta)
-
-    core.loadSystemConfiguration()
-    print(core.getLoadedDevices())
+        print(f"received frame shape {frame.shape}, index {event.index}")
 
     core.mda.run(MDASequence(time_plan=TIntervalLoops(interval=0.2, loops=8)))
