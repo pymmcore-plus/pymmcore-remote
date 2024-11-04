@@ -1,6 +1,5 @@
 import operator
 
-import numpy as np
 import pymmcore
 import pytest
 from useq import MDAEvent
@@ -13,7 +12,7 @@ from pymmcore_remote._serialize import (  # noqa: E402
     SerConfiguration,
     SerMDAEvent,
     SerMetadata,
-    SerNDArray,
+    # SerNDArray,
 )
 
 
@@ -21,8 +20,8 @@ def _roundtrip(serializer, obj, compare=operator.eq):
     return compare(serializer().from_dict("", serializer().to_dict(obj)), obj)
 
 
-def test_ndarray():
-    assert _roundtrip(SerNDArray, np.random.rand(4, 4), np.allclose)
+# def test_ndarray():
+#     assert _roundtrip(SerNDArray, np.random.rand(4, 4), np.allclose)
 
 
 def test_cmmerror():

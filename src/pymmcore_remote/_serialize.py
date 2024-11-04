@@ -14,19 +14,17 @@ import pymmcore
 import Pyro5
 import Pyro5.api
 import useq
-from pymmcore_plus.core import Configuration, Metadata
+from pymmcore_plus.core import Configuration, DeviceProperty, Metadata
 
 if TYPE_CHECKING:
     from collections.abc import Sized
 
 # https://pyro5.readthedocs.io/en/latest/clientcode.html#serialization
-try:
+with contextlib.suppress(ImportError):
     import msgpack  # noqa: F401
 
     # msgpack|serpent|json, all work - but not marshal
     Pyro5.config.SERIALIZER = "msgpack"
-except ImportError:  # pragma: no cover
-    pass
 
 T = TypeVar("T")
 
@@ -70,6 +68,28 @@ class SerMDASequence(Serializer[useq.MDASequence]):
 
     def from_dict(self, classname: str, d: dict) -> useq.MDASequence:
         return useq.MDASequence.model_validate(d)
+
+
+class SerDeviceProperty(Serializer[DeviceProperty]):
+    def to_dict(self, obj: DeviceProperty) -> dict:
+        from .server._server import CORE_NAME, GLOBAL_DAEMON
+
+        return {
+            "device_label": obj.device,
+            "property_name": obj.name,
+            # get URI for the device.core
+            # FIXME: i don't think this is the right approach, we may be registering
+            # the same object multiple times
+            "core_uri": GLOBAL_DAEMON and GLOBAL_DAEMON.uriFor(CORE_NAME),
+        }
+
+    def from_dict(self, classname: str, d: dict) -> DeviceProperty:
+        from pymmcore_remote.client import MMCorePlusProxy
+
+        # TODO: not sure if this is the best way to get the remote core object
+        core_uri = d.pop("core_uri")
+        core = MMCorePlusProxy.instance(core_uri)
+        return DeviceProperty(**d, mmcore=core)
 
 
 class SerMDAEvent(Serializer[useq.MDAEvent]):
@@ -116,39 +136,6 @@ class SerCMMError(Serializer[pymmcore.CMMError]):
         return pymmcore.CMMError(str(d.get("msg")))
 
 
-class SerNDArray(Serializer[np.ndarray]):
-    SHM_SENT: ClassVar[deque[SharedMemory]] = deque(maxlen=15)
-
-    def to_dict(self, obj: np.ndarray) -> dict:
-        shm = SharedMemory(create=True, size=obj.nbytes)
-        SerNDArray.SHM_SENT.append(shm)
-        b: np.ndarray = np.ndarray(obj.shape, dtype=obj.dtype, buffer=shm.buf)
-        b[:] = obj[:]
-        return {
-            "shm": shm.name,
-            "shape": obj.shape,
-            "dtype": str(obj.dtype),
-        }
-
-    def from_dict(self, classname: str, d: dict) -> np.ndarray:
-        """Convert dict from `ndarray_to_dict` back to np.ndarray."""
-        shm = SharedMemory(name=d["shm"], create=False)
-        array: np.ndarray = np.ndarray(
-            d["shape"], dtype=d["dtype"], buffer=shm.buf
-        ).copy()
-        shm.close()
-        shm.unlink()
-        return array
-
-
-@atexit.register  # pragma: no cover
-def _cleanup() -> None:
-    for shm in SerNDArray.SHM_SENT:
-        shm.close()
-        with contextlib.suppress(FileNotFoundError):
-            shm.unlink()
-
-
 def remove_shm_from_resource_tracker() -> None:
     """Monkey-patch multiprocessing.resource_tracker so SharedMemory won't be tracked.
 
@@ -174,9 +161,54 @@ def remove_shm_from_resource_tracker() -> None:
         del resource_tracker._CLEANUP_FUNCS["shared_memory"]  # type: ignore [attr-defined]
 
 
+def register_numpy_serializer() -> None:
+    # if we're using msgpack, check for msgpack_numpy to serialize numpy arrays
+    if Pyro5.config.SERIALIZER == "msgpack":
+        with contextlib.suppress(ImportError):
+            import msgpack_numpy
+
+            msgpack_numpy.patch()
+            return
+
+    # otherwise use shared memory, which will fail over the network
+    class SerNDArray(Serializer[np.ndarray]):
+        SHM_SENT: ClassVar[deque[SharedMemory]] = deque(maxlen=15)
+
+        def to_dict(self, obj: np.ndarray) -> dict:
+            shm = SharedMemory(create=True, size=obj.nbytes)
+            SerNDArray.SHM_SENT.append(shm)
+            b: np.ndarray = np.ndarray(obj.shape, dtype=obj.dtype, buffer=shm.buf)
+            b[:] = obj[:]
+            return {
+                "shm": shm.name,
+                "shape": obj.shape,
+                "dtype": str(obj.dtype),
+            }
+
+        def from_dict(self, classname: str, d: dict) -> np.ndarray:
+            """Convert dict from `ndarray_to_dict` back to np.ndarray."""
+            shm = SharedMemory(name=d["shm"], create=False)
+            array: np.ndarray = np.ndarray(
+                d["shape"], dtype=d["dtype"], buffer=shm.buf
+            ).copy()
+            shm.close()
+            shm.unlink()
+            return array
+
+    @atexit.register  # pragma: no cover
+    def _cleanup() -> None:
+        for shm in SerNDArray.SHM_SENT:
+            shm.close()
+            with contextlib.suppress(FileNotFoundError):
+                shm.unlink()
+
+    remove_shm_from_resource_tracker()
+    SerNDArray.register()
+
+
 @lru_cache  # only register once
 def register_serializers() -> None:
-    remove_shm_from_resource_tracker()
+    register_numpy_serializer()
     for i in globals().values():
         if isinstance(i, type) and issubclass(i, Serializer) and i != Serializer:
             i.register()

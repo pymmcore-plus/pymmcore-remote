@@ -40,5 +40,7 @@ def server_process() -> Iterator[subprocess.Popen]:
 @pytest.fixture
 def proxy(server_process: Any) -> Iterator[CMMCorePlus]:
     with MMCorePlusProxy() as mmcore:
+        mmcore.unloadAllDevices()
         mmcore.loadSystemConfiguration()
+        mmcore.waitForSystem()
         yield mmcore

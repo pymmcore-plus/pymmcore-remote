@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import numpy as np
+from pymmcore_plus import DeviceProperty
 from useq import MDAEvent, MDASequence
 
 from pymmcore_remote import server
@@ -32,6 +33,7 @@ def test_mda(proxy: CMMCorePlus) -> None:
 
     proxy.mda.run(mda)
     seq_started_mock.assert_called_once()
+    frame_ready_mock.assert_called()
     for call in frame_ready_mock.call_args_list:
         assert isinstance(call[0][0], np.ndarray)
         assert isinstance(call[0][1], MDAEvent)
@@ -53,9 +55,6 @@ def test_mda_cancel(proxy: CMMCorePlus) -> None:
     assert not proxy.mda.is_running()
 
 
-# TODO: this test may accidentally pass if qtbot is created before this
-
-
 def test_cb(proxy: CMMCorePlus) -> None:
     """This tests that we can call a core method within a callback"""
     assert isinstance(proxy.events, ClientSideCMMCoreSignaler)
@@ -66,3 +65,23 @@ def test_cb(proxy: CMMCorePlus) -> None:
     while not mock.called:
         time.sleep(0.1)
     mock.assert_called_once()
+
+
+def test_core_api(proxy: CMMCorePlus) -> None:
+    """Test many of the core API methods."""
+    props = list(proxy.iterProperties())
+    assert props
+    assert all(isinstance(prop, DeviceProperty) for prop in props)
+    assert all(prop.isValid() for prop in props)
+
+    props2 = list(proxy.iterProperties(as_object=False))
+    assert props2
+    # !! it should be a tuple, but it looks like pyro deserializes it as a list
+    assert all(isinstance(prop, list) for prop in props2)
+
+    _prop3 = proxy.getProperty("Objective", "Label")
+    _prop4 = proxy.getPropertyObject("Objective", "Label")
+
+    # will fail https://github.com/pymmcore-plus/pymmcore-remote/issues/2
+    # assert _prop4.value == _prop3
+    # assert isinstance(proxy.getPropertyType("Objective", "Label"), PropertyType)

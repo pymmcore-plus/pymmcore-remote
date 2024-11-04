@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import Pyro5.api
 import Pyro5.errors
@@ -37,15 +37,23 @@ class MMCorePlusProxy(Pyro5.api.Proxy):
     """Proxy for CMMCorePlus object on server."""
 
     _mda_runner: MDARunnerProxy
+    _instances: ClassVar[dict[str, MMCorePlusProxy]] = {}
+
+    @classmethod
+    def instance(cls, uri: Pyro5.api.URI | str) -> MMCorePlusProxy:
+        """Return the instance for the given URI, creating it if necessary."""
+        if str(uri) not in cls._instances:
+            cls._instances[str(uri)] = cls(uri)
+        return cls._instances[str(uri)]
 
     def __init__(
-        self,
-        host: str = server.DEFAULT_HOST,
-        port: int = server.DEFAULT_PORT,
+        self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
     ) -> None:
+        if uri is None:
+            uri = f"PYRO:{server.CORE_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
         register_serializers()
-        uri = f"PYRO:{server.CORE_NAME}@{host}:{port}"
-        super().__init__(uri)
+        super().__init__(uri, connected_socket=connected_socket)
+        self._instances[str(self._pyroUri)] = self
 
         # check that the connection is valid
         try:

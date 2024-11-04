@@ -153,6 +153,9 @@ def serve(
             if verbose:
                 log(f"Registered object {obj!r}:\n    uri = {uri}")
         if verbose:
+            from pymmcore_plus import configure_logging
+
+            configure_logging(stderr_level="DEBUG")
             Pyro5.config.DETAILED_TRACEBACK = True
 
         log(f"pymmcore-remote daemon listening at {host}:{port}. [Ctrl+C to exit]")
