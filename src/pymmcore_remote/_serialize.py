@@ -3,30 +3,74 @@ from __future__ import annotations
 import atexit
 import contextlib
 import datetime
+import re
 from abc import ABC, abstractmethod
 from collections import deque
+from enum import IntEnum
 from functools import lru_cache
 from multiprocessing.shared_memory import SharedMemory
-from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
 import numpy as np
 import pymmcore
 import Pyro5
 import Pyro5.api
 import useq
-from pymmcore_plus.core import Configuration, DeviceProperty, Metadata
+from pymmcore_plus import ConfigGroup, Device, DeviceAdapter
+from pymmcore_plus.core import Configuration, DeviceProperty, Metadata, _constants
+from Pyro5 import serializers
 
 if TYPE_CHECKING:
     from collections.abc import Sized
 
-# https://pyro5.readthedocs.io/en/latest/clientcode.html#serialization
-with contextlib.suppress(ImportError):
-    import msgpack  # noqa: F401
-
-    # msgpack|serpent|json, all work - but not marshal
-    Pyro5.config.SERIALIZER = "msgpack"
-
 T = TypeVar("T")
+
+# --------------------- START CUSTOM SERIALIZER ---------------------
+
+# https://github.com/pymmcore-plus/pymmcore-remote/issues/2
+# because Pyro5 doesn't reserialize IntEnums as IntEnums, we need to do it ourselves
+
+# find all the IntEnum classes in _constants
+INT_ENUMS: tuple[type[IntEnum], ...] = tuple(
+    obj
+    for name in dir(_constants)
+    if isinstance((obj := getattr(_constants, name)), type) and issubclass(obj, IntEnum)
+)
+
+
+class PymmcoreSerializer(serializers.MsgpackSerializer):
+    serializer_id = 199
+
+    # override the default serializer to turn IntEnums into dicts
+    def dumps(self, data: Any) -> Any:
+        if isinstance(data, IntEnum):
+            data = {
+                "__class__": f"{data.__class__.__module__}.{data.__class__.__name__}",
+                "value": data.value,
+            }
+        return super().dumps(data)
+
+
+# then register a custom dict-to-enum function to reserialize the dict into an IntEnum
+def _dict_to_enum(classname: str, dct: dict) -> IntEnum:
+    mod_name, class_name = classname.rsplit(".", 1)
+    cls = getattr(__import__(mod_name, fromlist=[class_name]), class_name)
+    return cast(type[IntEnum], cls)(dct["value"])
+
+
+for obj in INT_ENUMS:
+    PymmcoreSerializer.register_dict_to_class(
+        f"{obj.__module__}.{obj.__name__}", _dict_to_enum
+    )
+
+# --------------------- END CUSTOM SERIALIZER ---------------------
+
+# register our custom serializer
+
+PYMMCORE_SERIALIZER = "pymmcore-serializer"
+serializer = PymmcoreSerializer()
+serializers.serializers[PYMMCORE_SERIALIZER] = serializer
+serializers.serializers_by_id[PymmcoreSerializer.serializer_id] = serializer
 
 
 class Serializer(ABC, Generic[T]):
@@ -90,6 +134,69 @@ class SerDeviceProperty(Serializer[DeviceProperty]):
         core_uri = d.pop("core_uri")
         core = MMCorePlusProxy.instance(core_uri)
         return DeviceProperty(**d, mmcore=core)
+
+
+class SerDeviceAdapter(Serializer[DeviceAdapter]):
+    def to_dict(self, obj: DeviceAdapter) -> dict:
+        from .server._server import CORE_NAME, GLOBAL_DAEMON
+
+        return {
+            "library_name": obj.name,
+            "core_uri": GLOBAL_DAEMON and GLOBAL_DAEMON.uriFor(CORE_NAME),
+        }
+
+    def from_dict(self, classname: str, d: dict) -> DeviceAdapter:
+        from pymmcore_remote.client import MMCorePlusProxy
+
+        core_uri = d.pop("core_uri")
+        core = MMCorePlusProxy.instance(core_uri)
+        return DeviceAdapter(**d, mmcore=core)
+
+
+class SerDevice(Serializer[Device]):
+    def to_dict(self, obj: Device) -> dict:
+        from .server._server import CORE_NAME, GLOBAL_DAEMON
+
+        return {
+            "device_label": obj.label,
+            "adapter_name": obj._adapter_name,
+            "device_name": obj._device_name,
+            "type": obj._type,
+            "description": obj._description,
+            "core_uri": GLOBAL_DAEMON and GLOBAL_DAEMON.uriFor(CORE_NAME),
+        }
+
+    def from_dict(self, classname: str, d: dict) -> Device:
+        from pymmcore_remote.client import MMCorePlusProxy
+
+        core_uri = d.pop("core_uri")
+        core = MMCorePlusProxy.instance(core_uri)
+        return Device(**d, mmcore=core)
+
+
+class SerRePattern(Serializer[re.Pattern]):
+    def to_dict(self, obj: re.Pattern) -> dict:
+        return {"pattern": obj.pattern}
+
+    def from_dict(self, classname: str, d: dict) -> re.Pattern:
+        return re.compile(d["pattern"])
+
+
+class SerConfigGroup(Serializer[ConfigGroup]):
+    def to_dict(self, obj: ConfigGroup) -> dict:
+        from .server._server import CORE_NAME, GLOBAL_DAEMON
+
+        return {
+            "group_name": obj._name,
+            "core_uri": GLOBAL_DAEMON and GLOBAL_DAEMON.uriFor(CORE_NAME),
+        }
+
+    def from_dict(self, classname: str, d: dict) -> ConfigGroup:
+        from pymmcore_remote.client import MMCorePlusProxy
+
+        core_uri = d.pop("core_uri")
+        core = MMCorePlusProxy.instance(core_uri)
+        return ConfigGroup(**d, mmcore=core)
 
 
 class SerMDAEvent(Serializer[useq.MDAEvent]):
@@ -208,6 +315,9 @@ def register_numpy_serializer() -> None:
 
 @lru_cache  # only register once
 def register_serializers() -> None:
+    # use our custom serializer
+    Pyro5.config.SERIALIZER = PYMMCORE_SERIALIZER
+
     register_numpy_serializer()
     for i in globals().values():
         if isinstance(i, type) and issubclass(i, Serializer) and i != Serializer:

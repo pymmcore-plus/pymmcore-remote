@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import numpy as np
-from pymmcore_plus import DeviceProperty
+import pymmcore
+import pytest
+from pymmcore_plus import (
+    Configuration,
+    Device,
+    DeviceAdapter,
+    DeviceDetectionStatus,
+    DeviceInitializationState,
+    DeviceProperty,
+    DeviceType,
+    FocusDirection,
+    Metadata,
+    PropertyType,
+)
 from useq import MDAEvent, MDASequence
 
 from pymmcore_remote import server
@@ -69,6 +83,7 @@ def test_cb(proxy: CMMCorePlus) -> None:
 
 def test_core_api(proxy: CMMCorePlus) -> None:
     """Test many of the core API methods."""
+    # DeviceProperty object
     props = list(proxy.iterProperties())
     assert props
     assert all(isinstance(prop, DeviceProperty) for prop in props)
@@ -82,6 +97,49 @@ def test_core_api(proxy: CMMCorePlus) -> None:
     _prop3 = proxy.getProperty("Objective", "Label")
     _prop4 = proxy.getPropertyObject("Objective", "Label")
 
-    # will fail https://github.com/pymmcore-plus/pymmcore-remote/issues/2
-    # assert _prop4.value == _prop3
-    # assert isinstance(proxy.getPropertyType("Objective", "Label"), PropertyType)
+    assert _prop4.value == _prop3
+    assert isinstance(proxy.getPropertyType("Objective", "Label"), PropertyType)
+
+    # DeviceAdapter object
+    adapters = list(proxy.iterDeviceAdapters())
+    assert adapters
+    assert all(isinstance(prop, DeviceAdapter) for prop in adapters)
+    assert all(prop.core is proxy for prop in adapters)
+
+    # Device object
+    devices = list(proxy.iterDevices(device_type=DeviceType.Camera))
+    assert all(isinstance(device, Device) for device in devices)
+    assert all(d.core is proxy for d in devices)
+
+    # ConfigGroupObject object
+    cfg = proxy.getConfigGroupObject("Channel")
+    assert cfg
+
+    assert isinstance(proxy.getDeviceType("Camera"), DeviceType)
+    assert isinstance(proxy.getFocusDirection("Z"), FocusDirection)
+    assert isinstance(proxy.detectDevice("Z"), DeviceDetectionStatus)
+    assert isinstance(
+        proxy.getDeviceInitializationState("Z"), DeviceInitializationState
+    )
+    assert isinstance(proxy.getConfigData("Channel", "FITC"), Configuration)
+
+    proxy.startContinuousSequenceAcquisition()
+    proxy.stopSequenceAcquisition()
+    ary, meta = proxy.getLastImageAndMD()
+    assert isinstance(ary, np.ndarray)
+    assert isinstance(meta, Metadata)
+
+    assert isinstance(proxy.getDeviceSchema("Camera"), dict)
+    assert isinstance(proxy.objective_device_pattern, re.Pattern)
+
+    assert isinstance(proxy.state(), dict)
+
+    assert proxy.canSequenceEvents(MDAEvent(), MDAEvent())
+
+
+# TODO: serialization
+@pytest.mark.xfail
+def test_core_api_native(proxy: CMMCorePlus) -> None:
+    assert isinstance(
+        proxy.getConfigData("Channel", "FITC", native=True), pymmcore.Configuration
+    )
