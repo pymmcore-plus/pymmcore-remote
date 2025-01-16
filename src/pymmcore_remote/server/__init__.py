@@ -11,11 +11,11 @@ from ._server import (
 )
 
 __all__ = [
+    "CORE_NAME",
     "DEFAULT_HOST",
     "DEFAULT_PORT",
     "DEFAULT_URI",
+    "RemoteCMMCorePlus",
     "serve",
     "server_process",
-    "CORE_NAME",
-    "RemoteCMMCorePlus",
 ]
