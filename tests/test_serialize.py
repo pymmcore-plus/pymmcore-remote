@@ -5,9 +5,9 @@ import pytest
 from useq import MDAEvent
 
 pytest.importorskip("Pyro5")
-from pymmcore_plus import Configuration, Metadata  # noqa: E402
+from pymmcore_plus import Configuration, Metadata
 
-from pymmcore_remote._serialize import (  # noqa: E402
+from pymmcore_remote._serialize import (
     SerCMMError,
     SerConfiguration,
     SerMDAEvent,
