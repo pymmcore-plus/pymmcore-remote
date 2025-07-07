@@ -174,7 +174,7 @@ def server_process(
     log = _logger_or_print("info")
 
     uri = f"PYRO:{Pyro5.core.DAEMON_NAME}@{host}:{port}"
-    remote_daemon = cast(Pyro5.api.DaemonObject, Pyro5.api.Proxy(uri))
+    remote_daemon = cast("Pyro5.api.DaemonObject", Pyro5.api.Proxy(uri))
     with contextlib.suppress(Pyro5.errors.CommunicationError):
         remote_daemon.ping()
         # if we get here, the server is already running
