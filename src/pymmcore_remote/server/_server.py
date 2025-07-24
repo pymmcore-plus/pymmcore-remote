@@ -22,7 +22,7 @@ from pymmcore_remote._util import wrap_for_pyro
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
-    from click import Path
+    from pymmcore_plus.mda._runner import SingleOutput
     from useq import MDAEvent
 
 with contextlib.suppress(ImportError):
@@ -100,7 +100,7 @@ class RemoteCMMCorePlus(CMMCorePlus, _CallbackMixin):
         self,
         events: Iterable[MDAEvent],
         *,
-        output: Path | str | object | Sequence[Path | str | object] | None = None,
+        output: SingleOutput | Sequence[SingleOutput] | None = None,
         block: bool = False,
     ) -> None:
         """Run an MDA sequence in another thread on the server side."""
@@ -174,7 +174,7 @@ def server_process(
     log = _logger_or_print("info")
 
     uri = f"PYRO:{Pyro5.core.DAEMON_NAME}@{host}:{port}"
-    remote_daemon = cast(Pyro5.api.DaemonObject, Pyro5.api.Proxy(uri))
+    remote_daemon = cast("Pyro5.api.DaemonObject", Pyro5.api.Proxy(uri))
     with contextlib.suppress(Pyro5.errors.CommunicationError):
         remote_daemon.ping()
         # if we get here, the server is already running

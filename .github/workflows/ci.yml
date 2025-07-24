@@ -22,85 +22,89 @@ jobs:
       - run: pipx run check-manifest
 
   test:
-    name: ${{ matrix.platform }} py${{ matrix.python-version }}
+    name: ${{ matrix.platform }} (${{ matrix.python-version }})
     runs-on: ${{ matrix.platform }}
+    env:
+      UV_PRERELEASE: ${{ github.event_name == 'schedule' && 'allow' || 'if-necessary-or-explicit' }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-        include:
-          - platform: macos-13
-            python-version: "3.12"
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[test]
+      - uses: pymmcore-plus/setup-mm-test-adapters@main
 
-      - name: Set cache path
-        shell: bash
-        run: |
-          set -e
-          CACHE_PATH=$(python -c 'from pymmcore_plus import install; print(install.USER_DATA_MM_PATH)')
-          echo "CACHE_PATH=$CACHE_PATH" >> $GITHUB_ENV
+      - name: Install Dependencies
+        run: uv sync --no-dev --group test
 
-      - name: Cache Drivers
-        id: cache-mm-build
-        uses: actions/cache@v4
+      - name: 🧪 Run Tests
+        run: uv run --no-sync coverage run -p -m pytest -v
+
+      # If something goes wrong with --pre tests, we can open an issue in the repo
+      - name: 📝 Report --pre Failures
+        if: failure() && github.event_name == 'schedule'
+        uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLATFORM: ${{ matrix.platform }}
+          PYTHON: ${{ matrix.python-version }}
+          RUN_ID: ${{ github.run_id }}
+          TITLE: "[test-bot] pip install --pre is failing"
         with:
-          path: ${{ env.CACHE_PATH }}
-          key: ${{ runner.os }}-mmbuild-${{ hashFiles('src/pymmcore_plus/_build.py') }}
+          filename: .github/TEST_FAIL_TEMPLATE.md
+          update_existing: true
 
-      - name: Install Micro-Manager
-        if: steps.cache-mm-build.outputs.cache-hit != 'true'
-        run: mmcore install
-
-      - name: Test
-        run: pytest -v --color=yes --cov=pymmcore_plus --cov-report=xml
-
-      - name: Coverage
-        uses: codecov/codecov-action@v5
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          name: covreport-${{ matrix.platform }}-py${{ matrix.python-version }}
+          path: ./.coverage*
+          include-hidden-files: true
 
-  deploy:
-    name: Deploy
+  upload_coverage:
+    if: always()
+    needs: [test]
+    uses: pyapp-kit/workflows/.github/workflows/upload-coverage.yml@v2
+    secrets:
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}
+
+  build-and-inspect-package:
+    name: Build & inspect package.
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: hynek/build-and-inspect-python-package@v2
+
+  upload-to-pypi:
+    name: Upload package to PyPI
+    needs: build-and-inspect-package
     if: success() && startsWith(github.ref, 'refs/tags/') && github.event_name != 'schedule'
     runs-on: ubuntu-latest
-
     permissions:
       id-token: write
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Download built artifact to dist/
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      - name: 👷 Build
-        run: |
-          python -m pip install build
-          python -m build
-
+          name: Packages
+          path: dist
       - name: 🚢 Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: './dist/*'
+          files: "./dist/*"
