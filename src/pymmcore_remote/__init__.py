@@ -9,7 +9,7 @@ except PackageNotFoundError:
 __author__ = "Talley Lambert"
 __email__ = "talley.lambert@gmail.com"
 
-from .client import MMCorePlusProxy
+from .client import ClientCMMCorePlus, MMCorePlusProxy
 from .server import serve, server_process
 
-__all__ = ["MMCorePlusProxy", "serve", "server_process"]
+__all__ = ["ClientCMMCorePlus", "MMCorePlusProxy", "serve", "server_process"]

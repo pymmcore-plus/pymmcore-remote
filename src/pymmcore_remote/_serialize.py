@@ -128,11 +128,11 @@ class SerDeviceProperty(Serializer[DeviceProperty]):
         }
 
     def from_dict(self, classname: str, d: dict) -> DeviceProperty:
-        from pymmcore_remote.client import MMCorePlusProxy
+        from pymmcore_remote.client import ClientCMMCorePlus
 
         # TODO: not sure if this is the best way to get the remote core object
         core_uri = d.pop("core_uri")
-        core = MMCorePlusProxy.instance(core_uri)
+        core = ClientCMMCorePlus.instance(core_uri)
         return DeviceProperty(**d, mmcore=core)
 
 
@@ -146,10 +146,10 @@ class SerDeviceAdapter(Serializer[DeviceAdapter]):
         }
 
     def from_dict(self, classname: str, d: dict) -> DeviceAdapter:
-        from pymmcore_remote.client import MMCorePlusProxy
+        from pymmcore_remote.client import ClientCMMCorePlus
 
         core_uri = d.pop("core_uri")
-        core = MMCorePlusProxy.instance(core_uri)
+        core = ClientCMMCorePlus.instance(core_uri)
         return DeviceAdapter(**d, mmcore=core)
 
 
@@ -167,10 +167,10 @@ class SerDevice(Serializer[Device]):
         }
 
     def from_dict(self, classname: str, d: dict) -> Device:
-        from pymmcore_remote.client import MMCorePlusProxy
+        from pymmcore_remote.client import ClientCMMCorePlus
 
         core_uri = d.pop("core_uri")
-        core = MMCorePlusProxy.instance(core_uri)
+        core = ClientCMMCorePlus.instance(core_uri)
         return Device(**d, mmcore=core)
 
 
@@ -192,10 +192,10 @@ class SerConfigGroup(Serializer[ConfigGroup]):
         }
 
     def from_dict(self, classname: str, d: dict) -> ConfigGroup:
-        from pymmcore_remote.client import MMCorePlusProxy
+        from pymmcore_remote.client import ClientCMMCorePlus
 
         core_uri = d.pop("core_uri")
-        core = MMCorePlusProxy.instance(core_uri)
+        core = ClientCMMCorePlus.instance(core_uri)
         return ConfigGroup(**d, mmcore=core)
 
 

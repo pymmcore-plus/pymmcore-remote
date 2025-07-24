@@ -34,3 +34,4 @@ repos:
         additional_dependencies:
           - pymmcore_plus
           - Pyro5
+          - cachetools
