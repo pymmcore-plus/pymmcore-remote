@@ -40,7 +40,7 @@ dependencies = ["Pyro5", "pymmcore-plus[cli]", "msgpack", "msgpack-numpy"]
 test = ["pytest>=8.3.4", "pytest-cov>=6.0.0"]
 dev = [
     { include-group = "test" },
-    "ipython>=8.30.0",
+    "ipython>=8.18",
     "mypy>=1.13.0",
     "pdbpp; sys_platform != 'win32'",
     "pre-commit-uv>=4.0",
