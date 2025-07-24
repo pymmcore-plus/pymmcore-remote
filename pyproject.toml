@@ -33,7 +33,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
-dependencies = ["Pyro5", "pymmcore-plus[cli]", "msgpack", "msgpack-numpy"]
+dependencies = ["Pyro5", "pymmcore-plus[cli]>=0.14.0", "msgpack", "msgpack-numpy"]
 
 # https://peps.python.org/pep-0621/#dependencies-optional-dependencies
 [dependency-groups]

@@ -159,10 +159,6 @@ class SerDevice(Serializer[Device]):
 
         return {
             "device_label": obj.label,
-            "adapter_name": obj._adapter_name,
-            "device_name": obj._device_name,
-            "type": obj._type,
-            "description": obj._description,
             "core_uri": GLOBAL_DAEMON and GLOBAL_DAEMON.uriFor(CORE_NAME),
         }
 
@@ -171,7 +167,7 @@ class SerDevice(Serializer[Device]):
 
         core_uri = d.pop("core_uri")
         core = MMCorePlusProxy.instance(core_uri)
-        return Device(**d, mmcore=core)
+        return Device.create(d["device_label"], mmcore=core)
 
 
 class SerRePattern(Serializer[re.Pattern]):
