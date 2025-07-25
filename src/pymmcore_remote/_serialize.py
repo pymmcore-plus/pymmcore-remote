@@ -55,7 +55,7 @@ class PymmcoreSerializer(serializers.MsgpackSerializer):
 def _dict_to_enum(classname: str, dct: dict) -> IntEnum:
     mod_name, class_name = classname.rsplit(".", 1)
     cls = getattr(__import__(mod_name, fromlist=[class_name]), class_name)
-    return cast(type[IntEnum], cls)(dct["value"])
+    return cast("type[IntEnum]", cls)(dct["value"])
 
 
 for obj in INT_ENUMS:
@@ -159,10 +159,6 @@ class SerDevice(Serializer[Device]):
 
         return {
             "device_label": obj.label,
-            "adapter_name": obj._adapter_name,
-            "device_name": obj._device_name,
-            "type": obj._type,
-            "description": obj._description,
             "core_uri": GLOBAL_DAEMON and GLOBAL_DAEMON.uriFor(CORE_NAME),
         }
 
@@ -171,7 +167,7 @@ class SerDevice(Serializer[Device]):
 
         core_uri = d.pop("core_uri")
         core = ClientCMMCorePlus.instance(core_uri)
-        return Device(**d, mmcore=core)
+        return Device.create(d["device_label"], mmcore=core)
 
 
 class SerRePattern(Serializer[re.Pattern]):
