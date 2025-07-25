@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
 import Pyro5.api
 import Pyro5.errors
 from cachetools import LRUCache
-from pymmcore_plus import CMMCorePlus
 from pymmcore_plus.core.events import CMMCoreSignaler
 from pymmcore_plus.mda.events import MDASignaler
 
@@ -15,6 +15,7 @@ from ._serialize import register_serializers
 
 if TYPE_CHECKING:
     from psygnal import SignalInstance
+    from pymmcore_plus import CMMCorePlus
     from pymmcore_plus.mda import MDARunner
 
 
@@ -122,35 +123,49 @@ class _DaemonThread(threading.Thread):
         super().__init__(target=self.api_daemon.requestLoop, name=name, daemon=True)
 
 
-# There are two shortcomings of a plain Pyro5 proxy:
-# 1. It is not (as written) a CMMCorePlus. Therefore functionality that does any
-# isinstance check will fail.
-#
-# 2. It cannot be used by multiple threads. Naively this might be considered a good
-# thing, however this makes responding to core events tricky and hinders use from GUIs.
-#
-# RemoteCMMCorePlus strives to solve both shortcomings by abstracting multiple proxies
-# behind a single object.
-class ClientCMMCorePlus(CMMCorePlus):
-    """A handle on a CMMCorePlus instance running outside of this process."""
+PT = TypeVar("PT", bound=Pyro5.api.Proxy)
 
-    _instances: ClassVar[dict[str, ClientCMMCorePlus]] = {}
+
+class ProxyHandler(ABC, Generic[PT]):
+    """A wrapper around multiple Pyro proxies.
+
+    PyMMCore objects are often used in their own event callbacks. This presents a
+    problem for Pyro objects, as these callbacks are executed by Pyro worker threads,
+    which will need ownership over their own proxy. Thus handling PyMMCore object
+    callbacks requires organized transfer of multiple proxy objects - that is the goal
+    of this class.
+    """
+
+    _instances: ClassVar[dict[tuple[type[ProxyHandler], str], ProxyHandler]] = {}
+
+    @property
+    @abstractmethod
+    def _proxy_type(self) -> type[PT]:
+        """Return the proxy type handled by this class."""
+        pass
 
     @classmethod
-    def instance(cls, uri: Pyro5.api.URI | str | None = None) -> CMMCorePlus:
+    def instance(cls, uri: Pyro5.api.URI | str | None = None) -> Any:
         """Return the instance for the given URI, creating it if necessary."""
-        if str(uri) not in cls._instances:
-            cls._instances[str(uri)] = cls(uri)
-        return cls._instances[str(uri)]
+        key = (cls, str(uri))
+        if key not in cls._instances:
+            cls._instances[key] = cls(uri)
+        return cls._instances[key]
 
     def __init__(
         self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
     ) -> None:
         self._connected_socket = connected_socket
         self._uri = uri
-        self._proxy_cache: LRUCache[threading.Thread, MMCorePlusProxy] = LRUCache(
-            maxsize=4
-        )
+        # FIXME: There are many reasons why a cache with maximum capacity is a bad idea.
+        # First, there seems no reasonable maximum size. (Currently it's just a magic
+        # number). Second, there seems no reasonable eviction policy. LRU could be
+        # problematic if there are (maxsize) event callbacks. Suppose maxsize=2 - if you
+        # call snapImage on a CMMCorePlus proxy, and there are two imageSnapped
+        # callbacks, the second callback would then try to evict the original proxy held
+        # by the snapImage caller (assuming different Pyro worker threads for each
+        # callback). MRU might actually be most reasonable in this case...
+        self._proxy_cache: LRUCache[threading.Thread, PT] = LRUCache(maxsize=4)
         self._proxy_lock = threading.Lock()
 
     def _call_proxy(self, name: str, *args: Any, **kwargs: Any) -> Any:
@@ -160,7 +175,7 @@ class ClientCMMCorePlus(CMMCorePlus):
             with self._proxy_lock:
                 if len(cache) < cache.maxsize:
                     # Cache not full - we can just add a new one
-                    proxy = MMCorePlusProxy(
+                    proxy = self._proxy_type(
                         uri=self._uri, connected_socket=self._connected_socket
                     )
                 else:
@@ -168,8 +183,9 @@ class ClientCMMCorePlus(CMMCorePlus):
                     _lru_thread, proxy = cache.popitem()
                     proxy._pyroClaimOwnership()
                     # FIXME: Consider overriding _pyroClaimOwnership in MMCorePlusProxy
-                    # to do this as well.
-                    proxy.mda._pyroClaimOwnership()  # type: ignore
+                    # to do this as well. This could also maybe go away if we create
+                    # a ProxyHandler around the mda runner as well...
+                    proxy.mda._pyroClaimOwnership()
                 # Insert the new thread-proxy mapping
                 cache[thread] = proxy
 
@@ -188,6 +204,7 @@ class ClientCMMCorePlus(CMMCorePlus):
             "_call_proxy",
             "_proxy_cache",
             "_proxy_lock",
+            "_proxy_type",
             "_uri",
             "instance",
             "_instances",
@@ -197,3 +214,12 @@ class ClientCMMCorePlus(CMMCorePlus):
         ):
             return object.__getattribute__(self, name)
         return self._call_proxy(name)
+
+
+# TODO: Consider adding CMMCorePlus as supertype
+class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
+    """A handle on a CMMCorePlus instance running outside of this process."""
+
+    @property
+    def _proxy_type(self) -> type[MMCorePlusProxy]:
+        return MMCorePlusProxy
