@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast, overload
 
 import Pyro5.api
 import Pyro5.errors
@@ -46,11 +46,37 @@ class MMCorePlusProxy(Pyro5.api.Proxy):
             cls._instances[str(uri)] = cls(uri)
         return cls._instances[str(uri)]
 
+    @overload
     def __init__(
-        self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
+        self,
+        *,
+        port: int,
+        object_id: str | None = None,
+        host: str | None = None,
+        connected_socket: Any = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        uri: Pyro5.api.URI | str,
+        *,
+        connected_socket: Any = None,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        uri: Pyro5.api.URI | str | None = None,
+        *,
+        object_id: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        connected_socket: Any = None,
     ) -> None:
         if uri is None:
-            uri = f"PYRO:{server.CORE_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
+            object_id = server.CORE_NAME if object_id is None else object_id
+            host = server.DEFAULT_HOST if host is None else host
+            port = server.DEFAULT_PORT if port is None else port
+            uri = f"PYRO:{object_id}@{host}:{port}"
         register_serializers()
         super().__init__(uri, connected_socket=connected_socket)
         self._instances[str(self._pyroUri)] = self
