@@ -9,6 +9,7 @@ import Pyro5.errors
 from cachetools import LRUCache
 from pymmcore_plus.core.events import CMMCoreSignaler
 from pymmcore_plus.mda.events import MDASignaler
+from typing_extensions import override
 
 from . import server
 from ._serialize import register_serializers
@@ -137,12 +138,27 @@ class ProxyHandler(ABC, Generic[PT]):
     """
 
     _instances: ClassVar[dict[tuple[type[ProxyHandler], str], ProxyHandler]] = {}
+    _handler_fields: ClassVar[list[str]] = [
+        "_connected_socket",
+        "_call_proxy",
+        "_proxy_cache",
+        "_proxy_lock",
+        "_proxy_type",
+        "_uri",
+        "instance",
+        "_instances",
+        "__class__",
+        "__enter__",
+        "__exit__",
+        "__init__",
+        "__getattribute__",
+    ]
 
     @property
     @abstractmethod
     def _proxy_type(self) -> type[PT]:
         """Return the proxy type handled by this class."""
-        pass
+        ...
 
     @classmethod
     def instance(cls, uri: Pyro5.api.URI | str | None = None) -> Any:
@@ -193,25 +209,26 @@ class ProxyHandler(ABC, Generic[PT]):
         attr = getattr(cache[thread], name)
         return attr
 
+    def __enter__(self) -> Any:
+        """Use as a context manager."""
+        return self._call_proxy("__enter__")()
+
+    # this is a lie... but it's more useful than -> Self
+    def __exit__(
+        self, exc_type: type | None, exc_value: Exception | None, traceback: str | None
+    ) -> None:
+        """Use as a context manager."""
+        self._call_proxy("__exit__")(
+            exc_type=exc_type, exc_value=exc_value, traceback=traceback
+        )
+
     def __getattribute__(self, name: str) -> Any:
         """Intercepts calls to CMMCorePlus functionality.
 
         Necessary for delegating to proxies.
         """
         # Always delegate to foo, except for special/private attributes
-        if name in (
-            "_connected_socket",
-            "_call_proxy",
-            "_proxy_cache",
-            "_proxy_lock",
-            "_proxy_type",
-            "_uri",
-            "instance",
-            "_instances",
-            "__class__",
-            "__init__",
-            "__getattribute__",
-        ):
+        if name == "_handler_fields" or name in self._handler_fields:
             return object.__getattribute__(self, name)
         return self._call_proxy(name)
 
@@ -220,6 +237,18 @@ class ProxyHandler(ABC, Generic[PT]):
 class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
     """A handle on a CMMCorePlus instance running outside of this process."""
 
+    def __init__(
+        self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
+    ) -> None:
+        super().__init__(uri=uri, connected_socket=connected_socket)
+        self._handler_fields.append("mda")
+
     @property
     def _proxy_type(self) -> type[MMCorePlusProxy]:
         return MMCorePlusProxy
+
+    # this is a lie... but it's more useful than -> Self
+    @override
+    def __enter__(self) -> CMMCorePlus:
+        """Use as a context manager."""
+        return cast("CMMCorePlus", super().__enter__())
