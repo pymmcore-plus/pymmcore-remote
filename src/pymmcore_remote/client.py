@@ -49,11 +49,7 @@ class MMCorePlusProxy(Pyro5.api.Proxy):
             cls._instances[str(uri)] = cls(uri)
         return cls._instances[str(uri)]
 
-    def __init__(
-        self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
-    ) -> None:
-        if uri is None:
-            uri = f"PYRO:{server.CORE_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
+    def __init__(self, uri: Pyro5.api.URI | str, connected_socket: Any = None) -> None:
         register_serializers()
         super().__init__(uri, connected_socket=connected_socket)
         self._instances[str(self._pyroUri)] = self
@@ -97,6 +93,10 @@ class MMCorePlusProxy(Pyro5.api.Proxy):
         """Use as a context manager."""
         return super().__enter__()  # type: ignore [no-any-return]
 
+    def _pyroClaimOwnership(self) -> None:
+        super()._pyroClaimOwnership()
+        self._mda_runner._pyroClaimOwnership()
+
 
 @Pyro5.api.expose  # type: ignore [misc]
 def receive_server_callback(self: Any, signal_name: str, args: tuple) -> None:
@@ -137,7 +137,7 @@ class ProxyHandler(ABC, Generic[PT]):
     of this class.
     """
 
-    _instances: ClassVar[dict[tuple[type[ProxyHandler], str], ProxyHandler]] = {}
+    _instances: ClassVar[dict[str, ProxyHandler]] = {}
     _handler_fields: ClassVar[list[str]] = [
         "_connected_socket",
         "_call_proxy",
@@ -163,7 +163,7 @@ class ProxyHandler(ABC, Generic[PT]):
     @classmethod
     def instance(cls, uri: Pyro5.api.URI | str | None = None) -> Any:
         """Return the instance for the given URI, creating it if necessary."""
-        key = (cls, str(uri))
+        key = str(uri)
         if key not in cls._instances:
             cls._instances[key] = cls(uri)
         return cls._instances[key]
@@ -172,6 +172,8 @@ class ProxyHandler(ABC, Generic[PT]):
         self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
     ) -> None:
         self._connected_socket = connected_socket
+        if uri is None:
+            uri = f"PYRO:{server.CORE_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
         self._uri = uri
         # FIXME: There are many reasons why a cache with maximum capacity is a bad idea.
         # First, there seems no reasonable maximum size. (Currently it's just a magic
@@ -183,6 +185,7 @@ class ProxyHandler(ABC, Generic[PT]):
         # callback). MRU might actually be most reasonable in this case...
         self._proxy_cache: LRUCache[threading.Thread, PT] = LRUCache(maxsize=4)
         self._proxy_lock = threading.Lock()
+        self._instances[str(self._uri)] = self
 
     def _call_proxy(self, name: str, *args: Any, **kwargs: Any) -> Any:
         cache = self._proxy_cache
@@ -198,10 +201,6 @@ class ProxyHandler(ABC, Generic[PT]):
                     # Cache full - repurpose lru proxy for the current thread
                     _lru_thread, proxy = cache.popitem()
                     proxy._pyroClaimOwnership()
-                    # FIXME: Consider overriding _pyroClaimOwnership in MMCorePlusProxy
-                    # to do this as well. This could also maybe go away if we create
-                    # a ProxyHandler around the mda runner as well...
-                    proxy.mda._pyroClaimOwnership()
                 # Insert the new thread-proxy mapping
                 cache[thread] = proxy
 
@@ -241,7 +240,6 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
         self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
     ) -> None:
         super().__init__(uri=uri, connected_socket=connected_socket)
-        self._handler_fields.append("mda")
 
     @property
     def _proxy_type(self) -> type[MMCorePlusProxy]:
@@ -251,4 +249,5 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
     @override
     def __enter__(self) -> CMMCorePlus:
         """Use as a context manager."""
-        return cast("CMMCorePlus", super().__enter__())
+        super().__enter__()
+        return cast("CMMCorePlus", self)
