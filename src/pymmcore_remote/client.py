@@ -23,11 +23,11 @@ if TYPE_CHECKING:
 class MDARunnerProxy(Pyro5.api.Proxy):
     """Proxy for MDARunner object on server."""
 
-    def __init__(self, mda_runner_uri: Any, cb_thread: _DaemonThread) -> None:
-        super().__init__(mda_runner_uri)
+    def __init__(self, uri: Pyro5.api.URI | str, connected_socket: Any = None) -> None:
+        super().__init__(uri, connected_socket)
         events = ClientSideMDASignaler()
         object.__setattr__(self, "events", events)
-        cb_thread.api_daemon.register(events)
+        _DaemonThread.instance("CallbackDaemon").api_daemon.register(events)
         self.connect_client_side_callback(events)  # must come after register()
 
     # this is a lie... but it's more useful than -> Self
@@ -68,25 +68,11 @@ class MMCorePlusProxy(Pyro5.api.Proxy):
         # here on the client side
         events = ClientSideCMMCoreSignaler()
         object.__setattr__(self, "events", events)
-        # create daemon thread to listen for callbacks/signals coming from the server
+        # listen for callbacks/signals coming from the server
         # and register the callback handler
-        cb_thread = _DaemonThread(name="CallbackDaemon")
-        cb_thread.api_daemon.register(events)
+        _DaemonThread.instance("CallbackDaemon").api_daemon.register(events)
         # connect our local callback handler to the server's signaler
         self.connect_client_side_callback(events)  # must come after register()
-
-        # Create a proxy object for the mda_runner as well, passing in the daemon thread
-        # so it too can receive signals from the server
-        object.__setattr__(
-            self, "_mda_runner", MDARunnerProxy(self.get_mda_runner_uri(), cb_thread)
-        )
-        # start the callback-handling thread
-        cb_thread.start()
-
-    @property
-    def mda(self) -> MDARunner:
-        """Return the MDARunner proxy."""
-        return self._mda_runner
 
     # this is a lie... but it's more useful than -> Self
     def __enter__(self) -> CMMCorePlus:
@@ -118,10 +104,19 @@ class ClientSideMDASignaler(MDASignaler):
 
 
 class _DaemonThread(threading.Thread):
-    def __init__(self, name: str = "DaemonThread"):
+    _instances: ClassVar[dict[str, _DaemonThread]] = {}
+
+    @classmethod
+    def instance(cls, name: str = "DaemonThread") -> _DaemonThread:
+        if name not in cls._instances:
+            cls._instances[name] = cls(name)
+        return cls._instances[name]
+
+    def __init__(self, name: str = "DaemonThread") -> None:
         self.api_daemon = Pyro5.api.Daemon()
         self._stop_event = threading.Event()
         super().__init__(target=self.api_daemon.requestLoop, name=name, daemon=True)
+        self.start()
 
 
 PT = TypeVar("PT", bound=Pyro5.api.Proxy)
@@ -228,6 +223,14 @@ class ProxyHandler(ABC, Generic[PT]):
         return self._call_proxy(name)
 
 
+class ClientMDARunner(ProxyHandler[MDARunnerProxy]):
+    """A handle on a CMMCorePlus instance running outside of this process."""
+
+    @property
+    def _proxy_type(self) -> type[MDARunnerProxy]:
+        return MDARunnerProxy
+
+
 # TODO: Consider adding CMMCorePlus as supertype
 class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
     """A handle on a CMMCorePlus instance running outside of this process."""
@@ -248,7 +251,6 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
         *,
         connected_socket: Any = None,
     ) -> None: ...
-
     def __init__(
         self,
         uri: Pyro5.api.URI | str | None = None,
@@ -264,6 +266,10 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
             port = server.DEFAULT_PORT if port is None else port
             uri = f"PYRO:{object_id}@{host}:{port}"
         super().__init__(uri=uri, connected_socket=connected_socket)
+
+        # Create a proxy handler for the mda runner so it too can receive server signals
+        self._handler_fields.append("mda")
+        self.mda = ClientMDARunner(uri=self.get_mda_runner_uri())
 
     @property
     def _proxy_type(self) -> type[MMCorePlusProxy]:
