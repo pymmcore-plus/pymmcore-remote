@@ -168,12 +168,8 @@ class ProxyHandler(ABC, Generic[PT]):
             cls._instances[key] = cls(uri)
         return cls._instances[key]
 
-    def __init__(
-        self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
-    ) -> None:
+    def __init__(self, uri: Pyro5.api.URI | str, connected_socket: Any = None) -> None:
         self._connected_socket = connected_socket
-        if uri is None:
-            uri = f"PYRO:{server.CORE_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
         self._uri = uri
         # FIXME: There are many reasons why a cache with maximum capacity is a bad idea.
         # First, there seems no reasonable maximum size. (Currently it's just a magic
@@ -239,6 +235,8 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
     def __init__(
         self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
     ) -> None:
+        if uri is None:
+            uri = f"PYRO:{server.CORE_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
         super().__init__(uri=uri, connected_socket=connected_socket)
 
     @property
