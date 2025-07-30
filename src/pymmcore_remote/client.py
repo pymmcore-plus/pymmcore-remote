@@ -185,11 +185,12 @@ class ProxyHandler(ABC, Generic[PT]):
         attr = getattr(cache[thread], name)
         return attr
 
+    # Note this method must exist explicitly to enable context manager behavior
     def __enter__(self) -> Any:
         """Use as a context manager."""
         return self._proxy_attr("__enter__")()
 
-    # this is a lie... but it's more useful than -> Self
+    # Note this method must exist explicitly to enable context manager behavior
     def __exit__(
         self, exc_type: type | None, exc_value: Exception | None, traceback: str | None
     ) -> None:
@@ -254,7 +255,7 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
     def _proxy_type(self) -> type[MMCorePlusProxy]:
         return MMCorePlusProxy
 
-    # this is a lie... but it's more useful than -> Self
+    # Overridden to provide a nice (although tehcnically wrong) type hint :)
     @override
     def __enter__(self) -> CMMCorePlus:
         """Use as a context manager."""
