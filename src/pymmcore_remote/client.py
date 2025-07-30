@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast, overload
 
 import Pyro5.api
 import Pyro5.errors
@@ -232,11 +232,37 @@ class ProxyHandler(ABC, Generic[PT]):
 class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
     """A handle on a CMMCorePlus instance running outside of this process."""
 
+    @overload
     def __init__(
-        self, uri: Pyro5.api.URI | str | None = None, connected_socket: Any = None
+        self,
+        *,
+        port: int,
+        object_id: str | None = None,
+        host: str | None = None,
+        connected_socket: Any = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        uri: Pyro5.api.URI | str,
+        *,
+        connected_socket: Any = None,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        uri: Pyro5.api.URI | str | None = None,
+        *,
+        object_id: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        connected_socket: Any = None,
     ) -> None:
         if uri is None:
-            uri = f"PYRO:{server.CORE_NAME}@{server.DEFAULT_HOST}:{server.DEFAULT_PORT}"
+            object_id = server.CORE_NAME if object_id is None else object_id
+            host = server.DEFAULT_HOST if host is None else host
+            port = server.DEFAULT_PORT if port is None else port
+            uri = f"PYRO:{object_id}@{host}:{port}"
         super().__init__(uri=uri, connected_socket=connected_socket)
 
     @property
