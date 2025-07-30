@@ -70,7 +70,7 @@ def test_mda_cancel(proxy: CMMCorePlus) -> None:
 
 
 def test_cb(proxy: CMMCorePlus) -> None:
-    """This tests that we can call a core method within a callback"""
+    """This tests that we can receive callbacks from the server"""
     assert isinstance(proxy.events, ClientSideCMMCoreSignaler)
 
     mock = Mock()
@@ -79,6 +79,18 @@ def test_cb(proxy: CMMCorePlus) -> None:
     while not mock.called:
         time.sleep(0.1)
     mock.assert_called_once()
+
+
+def test_calling_core_in_cb(proxy: CMMCorePlus) -> None:
+    """This tests that we can use the core without deadlocks in callbacks"""
+    mock = Mock()
+
+    @proxy.events.imageSnapped.connect
+    def callback() -> None:
+        mock(proxy.getLoadedDevices())
+
+    proxy.snapImage()
+    mock.assert_called_once_with(proxy.getLoadedDevices())
 
 
 def test_core_api(proxy: CMMCorePlus) -> None:
