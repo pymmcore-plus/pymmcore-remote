@@ -135,7 +135,7 @@ class ProxyHandler(ABC, Generic[PT]):
     _instances: ClassVar[dict[str, ProxyHandler]] = {}
     _handler_fields: ClassVar[list[str]] = [
         "_connected_socket",
-        "_call_proxy",
+        "_proxy_attr",
         "_proxy_cache",
         "_proxy_lock",
         "_proxy_type",
@@ -178,7 +178,8 @@ class ProxyHandler(ABC, Generic[PT]):
         self._proxy_lock = threading.Lock()
         self._instances[str(self._uri)] = self
 
-    def _call_proxy(self, name: str, *args: Any, **kwargs: Any) -> Any:
+    def _proxy_attr(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        """Retrieves an attribute on the appropriate proxy object for this thread."""
         cache = self._proxy_cache
         thread = threading.current_thread()
         if thread not in cache:
@@ -201,14 +202,14 @@ class ProxyHandler(ABC, Generic[PT]):
 
     def __enter__(self) -> Any:
         """Use as a context manager."""
-        return self._call_proxy("__enter__")()
+        return self._proxy_attr("__enter__")()
 
     # this is a lie... but it's more useful than -> Self
     def __exit__(
         self, exc_type: type | None, exc_value: Exception | None, traceback: str | None
     ) -> None:
         """Use as a context manager."""
-        self._call_proxy("__exit__")(
+        self._proxy_attr("__exit__")(
             exc_type=exc_type, exc_value=exc_value, traceback=traceback
         )
 
@@ -222,7 +223,7 @@ class ProxyHandler(ABC, Generic[PT]):
         # recursive chicken-or-egg problem.
         if name == "_handler_fields" or name in self._handler_fields:
             return object.__getattribute__(self, name)
-        return self._call_proxy(name)
+        return self._proxy_attr(name)
 
 
 class ClientMDARunner(ProxyHandler[MDARunnerProxy]):
