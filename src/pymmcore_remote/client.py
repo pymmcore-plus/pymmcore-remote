@@ -79,10 +79,6 @@ class MMCorePlusProxy(Pyro5.api.Proxy):
         """Use as a context manager."""
         return super().__enter__()  # type: ignore [no-any-return]
 
-    def _pyroClaimOwnership(self) -> None:
-        super()._pyroClaimOwnership()
-        self._mda_runner._pyroClaimOwnership()
-
 
 @Pyro5.api.expose  # type: ignore [misc]
 def receive_server_callback(self: Any, signal_name: str, args: tuple) -> None:
