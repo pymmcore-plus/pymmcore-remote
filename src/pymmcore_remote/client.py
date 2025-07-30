@@ -133,21 +133,6 @@ class ProxyHandler(ABC, Generic[PT]):
     """
 
     _instances: ClassVar[dict[str, ProxyHandler]] = {}
-    _handler_fields: ClassVar[list[str]] = [
-        "_connected_socket",
-        "_proxy_attr",
-        "_proxy_cache",
-        "_proxy_lock",
-        "_proxy_type",
-        "_uri",
-        "instance",
-        "_instances",
-        "__class__",
-        "__enter__",
-        "__exit__",
-        "__init__",
-        "__getattribute__",
-    ]
 
     @property
     @abstractmethod
@@ -178,7 +163,7 @@ class ProxyHandler(ABC, Generic[PT]):
         self._proxy_lock = threading.Lock()
         self._instances[str(self._uri)] = self
 
-    def _proxy_attr(self, name: str, *args: Any, **kwargs: Any) -> Any:
+    def _proxy_attr(self, name: str) -> Any:
         """Retrieves an attribute on the appropriate proxy object for this thread."""
         cache = self._proxy_cache
         thread = threading.current_thread()
@@ -213,16 +198,8 @@ class ProxyHandler(ABC, Generic[PT]):
             exc_type=exc_type, exc_value=exc_value, traceback=traceback
         )
 
-    def __getattribute__(self, name: str) -> Any:
-        """Intercepts calls to CMMCorePlus functionality.
-
-        Necessary for delegating to proxies.
-        """
-        # Always delegate to foo, except for special/private attributes
-        # Note we can't put _handler_fields in itself, or that'd cause a
-        # recursive chicken-or-egg problem.
-        if name == "_handler_fields" or name in self._handler_fields:
-            return object.__getattribute__(self, name)
+    def __getattr__(self, name: str) -> Any:
+        """Delegate to an appropriate MMCorePlusProxy."""
         return self._proxy_attr(name)
 
 
@@ -271,7 +248,6 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
         super().__init__(uri=uri, connected_socket=connected_socket)
 
         # Create a proxy handler for the mda runner so it too can receive server signals
-        self._handler_fields.append("mda")
         self.mda = ClientMDARunner(uri=self.get_mda_runner_uri())
 
     @property
