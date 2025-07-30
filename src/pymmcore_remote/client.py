@@ -218,6 +218,8 @@ class ProxyHandler(ABC, Generic[PT]):
         Necessary for delegating to proxies.
         """
         # Always delegate to foo, except for special/private attributes
+        # Note we can't put _handler_fields in itself, or that'd cause a
+        # recursive chicken-or-egg problem.
         if name == "_handler_fields" or name in self._handler_fields:
             return object.__getattribute__(self, name)
         return self._call_proxy(name)
