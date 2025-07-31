@@ -9,7 +9,7 @@ import Pyro5.api
 import Pyro5.core
 import pytest
 
-from pymmcore_remote import MMCorePlusProxy, server
+from pymmcore_remote import ClientCMMCorePlus, server
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -39,7 +39,7 @@ def server_process() -> Iterator[subprocess.Popen]:
 
 @pytest.fixture
 def proxy(server_process: Any) -> Iterator[CMMCorePlus]:
-    with MMCorePlusProxy() as mmcore:
+    with ClientCMMCorePlus() as mmcore:
         mmcore.unloadAllDevices()
         mmcore.loadSystemConfiguration()
         mmcore.waitForSystem()

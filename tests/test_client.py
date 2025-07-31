@@ -20,10 +20,10 @@ from pymmcore_plus import (
     Metadata,
     PropertyType,
 )
-from useq import MDAEvent, MDASequence
+from useq import MDAEvent, MDASequence, TIntervalLoops
 
 from pymmcore_remote import server
-from pymmcore_remote.client import ClientSideCMMCoreSignaler
+from pymmcore_remote.client import ClientSideCMMCoreSignaler, ClientSideMDASignaler
 
 if TYPE_CHECKING:
     from pymmcore_plus import CMMCorePlus
@@ -69,8 +69,27 @@ def test_mda_cancel(proxy: CMMCorePlus) -> None:
     assert not proxy.mda.is_running()
 
 
+def test_mda_cancel_in_cb(proxy: CMMCorePlus) -> None:
+    """This tests that we can use the mda runner without deadlocks in callbacks"""
+    mock = Mock()
+    mda = proxy.mda
+    assert isinstance(mda.events, ClientSideMDASignaler)
+    cancel_idx = 2
+
+    @mda.events.frameReady.connect
+    def _onframe(frame: np.ndarray, event: MDAEvent, meta: dict) -> None:
+        idx = event.index["t"]
+        mock(idx)
+        if idx == cancel_idx:
+            mda.cancel()
+
+    # Run a sequence [t=0, t=cancel_idx+1]
+    mda.run(MDASequence(time_plan=TIntervalLoops(interval=0.2, loops=cancel_idx + 2)))
+    mock.assert_called_with(cancel_idx)
+
+
 def test_cb(proxy: CMMCorePlus) -> None:
-    """This tests that we can call a core method within a callback"""
+    """This tests that we can receive callbacks from the server"""
     assert isinstance(proxy.events, ClientSideCMMCoreSignaler)
 
     mock = Mock()
@@ -79,6 +98,18 @@ def test_cb(proxy: CMMCorePlus) -> None:
     while not mock.called:
         time.sleep(0.1)
     mock.assert_called_once()
+
+
+def test_calling_core_in_cb(proxy: CMMCorePlus) -> None:
+    """This tests that we can use the core without deadlocks in callbacks"""
+    mock = Mock()
+
+    @proxy.events.imageSnapped.connect
+    def callback() -> None:
+        mock(proxy.getLoadedDevices())
+
+    proxy.snapImage()
+    mock.assert_called_once_with(proxy.getLoadedDevices())
 
 
 def test_core_api(proxy: CMMCorePlus) -> None:

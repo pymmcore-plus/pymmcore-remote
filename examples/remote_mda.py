@@ -1,14 +1,14 @@
 import numpy as np
 from useq import MDAEvent, MDASequence, TIntervalLoops
 
-from pymmcore_remote import MMCorePlusProxy, server_process
+from pymmcore_remote import ClientCMMCorePlus, server_process
 
 PORT = 55999
 
 # this context manager ensures a server is running, or creates a new one if not.
 with server_process(port=PORT):
     # create a proxy object that communicates with the MMCore object on the server
-    with MMCorePlusProxy(port=PORT) as core:
+    with ClientCMMCorePlus(port=PORT) as core:
         # continue using core as usual:
         core.loadSystemConfiguration()
 

@@ -46,13 +46,13 @@ mmcore-remote
 Run `mmcore-remote --help` for more options.
 
 Then, on the client side (or in a separate process), connect to the server using
-using `pymmcore_remote.MMCoreProxy`.  `MMCorePlusProxy` accepts `host` and `port`
+using `pymmcore_remote.ClientCMMCorePlus`.  `ClientCMMCorePlus` accepts `host` and `port`
 arguments that must match the server (if you override the defaults).
 
 ```python
-from pymmcore_remote import MMCorePlusProxy
+from pymmcore_remote import ClientCMMCorePlus
 
-with MMCorePlusProxy() as core:
+with ClientCMMCorePlus() as core:
     core.loadSystemConfiguration("path/to/config.cfg")
     # continue using core as you would with pymmcore_plus.CMMCorePlus
 ```

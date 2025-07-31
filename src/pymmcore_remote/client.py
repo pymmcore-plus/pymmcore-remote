@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any, ClassVar, cast, overload
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast, overload
 
 import Pyro5.api
 import Pyro5.errors
+from cachetools import LRUCache
 from pymmcore_plus.core.events import CMMCoreSignaler
 from pymmcore_plus.mda.events import MDASignaler
+from typing_extensions import override
 
 from . import server
 from ._serialize import register_serializers
@@ -17,14 +20,14 @@ if TYPE_CHECKING:
     from pymmcore_plus.mda import MDARunner
 
 
-class MDARunnerProxy(Pyro5.api.Proxy):
+class _MDARunnerProxy(Pyro5.api.Proxy):
     """Proxy for MDARunner object on server."""
 
-    def __init__(self, mda_runner_uri: Any, cb_thread: _DaemonThread) -> None:
-        super().__init__(mda_runner_uri)
+    def __init__(self, uri: Pyro5.api.URI | str, connected_socket: Any = None) -> None:
+        super().__init__(uri, connected_socket)
         events = ClientSideMDASignaler()
         object.__setattr__(self, "events", events)
-        cb_thread.api_daemon.register(events)
+        _DaemonThread.instance("CallbackDaemon").api_daemon.register(events)
         self.connect_client_side_callback(events)  # must come after register()
 
     # this is a lie... but it's more useful than -> Self
@@ -33,50 +36,19 @@ class MDARunnerProxy(Pyro5.api.Proxy):
         return super().__enter__()  # type: ignore [no-any-return]
 
 
-class MMCorePlusProxy(Pyro5.api.Proxy):
+class _MMCorePlusProxy(Pyro5.api.Proxy):
     """Proxy for CMMCorePlus object on server."""
 
-    _mda_runner: MDARunnerProxy
-    _instances: ClassVar[dict[str, MMCorePlusProxy]] = {}
+    _instances: ClassVar[dict[str, _MMCorePlusProxy]] = {}
 
     @classmethod
-    def instance(cls, uri: Pyro5.api.URI | str) -> MMCorePlusProxy:
+    def instance(cls, uri: Pyro5.api.URI | str) -> _MMCorePlusProxy:
         """Return the instance for the given URI, creating it if necessary."""
         if str(uri) not in cls._instances:
             cls._instances[str(uri)] = cls(uri)
         return cls._instances[str(uri)]
 
-    @overload
-    def __init__(
-        self,
-        *,
-        port: int,
-        object_id: str | None = None,
-        host: str | None = None,
-        connected_socket: Any = None,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        uri: Pyro5.api.URI | str,
-        *,
-        connected_socket: Any = None,
-    ) -> None: ...
-
-    def __init__(
-        self,
-        uri: Pyro5.api.URI | str | None = None,
-        *,
-        object_id: str | None = None,
-        host: str | None = None,
-        port: int | None = None,
-        connected_socket: Any = None,
-    ) -> None:
-        if uri is None:
-            object_id = server.CORE_NAME if object_id is None else object_id
-            host = server.DEFAULT_HOST if host is None else host
-            port = server.DEFAULT_PORT if port is None else port
-            uri = f"PYRO:{object_id}@{host}:{port}"
+    def __init__(self, uri: Pyro5.api.URI | str, connected_socket: Any = None) -> None:
         register_serializers()
         super().__init__(uri, connected_socket=connected_socket)
         self._instances[str(self._pyroUri)] = self
@@ -95,25 +67,11 @@ class MMCorePlusProxy(Pyro5.api.Proxy):
         # here on the client side
         events = ClientSideCMMCoreSignaler()
         object.__setattr__(self, "events", events)
-        # create daemon thread to listen for callbacks/signals coming from the server
+        # listen for callbacks/signals coming from the server
         # and register the callback handler
-        cb_thread = _DaemonThread(name="CallbackDaemon")
-        cb_thread.api_daemon.register(events)
+        _DaemonThread.instance("CallbackDaemon").api_daemon.register(events)
         # connect our local callback handler to the server's signaler
         self.connect_client_side_callback(events)  # must come after register()
-
-        # Create a proxy object for the mda_runner as well, passing in the daemon thread
-        # so it too can receive signals from the server
-        object.__setattr__(
-            self, "_mda_runner", MDARunnerProxy(self.get_mda_runner_uri(), cb_thread)
-        )
-        # start the callback-handling thread
-        cb_thread.start()
-
-    @property
-    def mda(self) -> MDARunner:
-        """Return the MDARunner proxy."""
-        return self._mda_runner
 
     # this is a lie... but it's more useful than -> Self
     def __enter__(self) -> CMMCorePlus:
@@ -141,7 +99,160 @@ class ClientSideMDASignaler(MDASignaler):
 
 
 class _DaemonThread(threading.Thread):
-    def __init__(self, name: str = "DaemonThread"):
+    _instances: ClassVar[dict[str, _DaemonThread]] = {}
+
+    @classmethod
+    def instance(cls, name: str = "DaemonThread") -> _DaemonThread:
+        if name not in cls._instances:
+            cls._instances[name] = cls(name)
+        return cls._instances[name]
+
+    def __init__(self, name: str = "DaemonThread") -> None:
         self.api_daemon = Pyro5.api.Daemon()
         self._stop_event = threading.Event()
         super().__init__(target=self.api_daemon.requestLoop, name=name, daemon=True)
+        self.start()
+
+
+PT = TypeVar("PT", bound=Pyro5.api.Proxy)
+
+
+class ProxyHandler(ABC, Generic[PT]):
+    """A wrapper around multiple Pyro proxies.
+
+    PyMMCore objects are often used in their own event callbacks. This presents a
+    problem for Pyro objects, as these callbacks are executed by Pyro worker threads,
+    which will need ownership over their own proxy. Thus handling PyMMCore object
+    callbacks requires organized transfer of multiple proxy objects - that is the goal
+    of this class.
+    """
+
+    _instances: ClassVar[dict[str, ProxyHandler]] = {}
+
+    @property
+    @abstractmethod
+    def _proxy_type(self) -> type[PT]:
+        """Return the proxy type handled by this class."""
+        ...
+
+    @classmethod
+    def instance(cls, uri: Pyro5.api.URI | str | None = None) -> Any:
+        """Return the instance for the given URI, creating it if necessary."""
+        key = str(uri)
+        if key not in cls._instances:
+            cls._instances[key] = cls(uri)
+        return cls._instances[key]
+
+    def __init__(self, uri: Pyro5.api.URI | str, connected_socket: Any = None) -> None:
+        self._connected_socket = connected_socket
+        self._uri = uri
+        # FIXME: There are many reasons why a cache with maximum capacity is a bad idea.
+        # First, there seems no reasonable maximum size. (Currently it's just a magic
+        # number). Second, there seems no reasonable eviction policy. LRU could be
+        # problematic if there are (maxsize) event callbacks. Suppose maxsize=2 - if you
+        # call snapImage on a CMMCorePlus proxy, and there are two imageSnapped
+        # callbacks, the second callback would then try to evict the original proxy held
+        # by the snapImage caller (assuming different Pyro worker threads for each
+        # callback). MRU might actually be most reasonable in this case...
+        self._proxy_cache: LRUCache[threading.Thread, PT] = LRUCache(maxsize=4)
+        self._proxy_lock = threading.Lock()
+        self._instances[str(self._uri)] = self
+
+    def _proxy_attr(self, name: str) -> Any:
+        """Retrieves an attribute on the appropriate proxy object for this thread."""
+        cache = self._proxy_cache
+        thread = threading.current_thread()
+        if thread not in cache:
+            with self._proxy_lock:
+                if len(cache) < cache.maxsize:
+                    # Cache not full - we can just add a new one
+                    proxy = self._proxy_type(
+                        uri=self._uri, connected_socket=self._connected_socket
+                    )
+                else:
+                    # Cache full - repurpose lru proxy for the current thread
+                    _lru_thread, proxy = cache.popitem()
+                    proxy._pyroClaimOwnership()
+                # Insert the new thread-proxy mapping
+                cache[thread] = proxy
+
+        # Delegate the call this thread's proxy
+        attr = getattr(cache[thread], name)
+        return attr
+
+    # Note this method must exist explicitly to enable context manager behavior
+    def __enter__(self) -> Any:
+        """Use as a context manager."""
+        return self._proxy_attr("__enter__")()
+
+    # Note this method must exist explicitly to enable context manager behavior
+    def __exit__(
+        self, exc_type: type | None, exc_value: Exception | None, traceback: str | None
+    ) -> None:
+        """Use as a context manager."""
+        self._proxy_attr("__exit__")(
+            exc_type=exc_type, exc_value=exc_value, traceback=traceback
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate to an appropriate MMCorePlusProxy."""
+        return self._proxy_attr(name)
+
+
+class ClientMDARunner(ProxyHandler[_MDARunnerProxy]):
+    """A handle on a CMMCorePlus instance running outside of this process."""
+
+    @property
+    def _proxy_type(self) -> type[_MDARunnerProxy]:
+        return _MDARunnerProxy
+
+
+# TODO: Consider adding CMMCorePlus as supertype
+class ClientCMMCorePlus(ProxyHandler[_MMCorePlusProxy]):
+    """A handle on a CMMCorePlus instance running outside of this process."""
+
+    @overload
+    def __init__(
+        self,
+        *,
+        port: int,
+        object_id: str | None = None,
+        host: str | None = None,
+        connected_socket: Any = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        uri: Pyro5.api.URI | str,
+        *,
+        connected_socket: Any = None,
+    ) -> None: ...
+    def __init__(
+        self,
+        uri: Pyro5.api.URI | str | None = None,
+        *,
+        object_id: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        connected_socket: Any = None,
+    ) -> None:
+        if uri is None:
+            object_id = server.CORE_NAME if object_id is None else object_id
+            host = server.DEFAULT_HOST if host is None else host
+            port = server.DEFAULT_PORT if port is None else port
+            uri = f"PYRO:{object_id}@{host}:{port}"
+        super().__init__(uri=uri, connected_socket=connected_socket)
+
+        # Create a proxy handler for the mda runner so it too can receive server signals
+        self.mda = ClientMDARunner(uri=self.get_mda_runner_uri())
+
+    @property
+    def _proxy_type(self) -> type[_MMCorePlusProxy]:
+        return _MMCorePlusProxy
+
+    # Overridden to provide a nice (although tehcnically wrong) type hint :)
+    @override
+    def __enter__(self) -> CMMCorePlus:
+        """Use as a context manager."""
+        super().__enter__()
+        return cast("CMMCorePlus", self)
