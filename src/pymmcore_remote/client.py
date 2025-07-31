@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from pymmcore_plus.mda import MDARunner
 
 
-class MDARunnerProxy(Pyro5.api.Proxy):
+class _MDARunnerProxy(Pyro5.api.Proxy):
     """Proxy for MDARunner object on server."""
 
     def __init__(self, uri: Pyro5.api.URI | str, connected_socket: Any = None) -> None:
@@ -36,14 +36,13 @@ class MDARunnerProxy(Pyro5.api.Proxy):
         return super().__enter__()  # type: ignore [no-any-return]
 
 
-class MMCorePlusProxy(Pyro5.api.Proxy):
+class _MMCorePlusProxy(Pyro5.api.Proxy):
     """Proxy for CMMCorePlus object on server."""
 
-    _mda_runner: MDARunnerProxy
-    _instances: ClassVar[dict[str, MMCorePlusProxy]] = {}
+    _instances: ClassVar[dict[str, _MMCorePlusProxy]] = {}
 
     @classmethod
-    def instance(cls, uri: Pyro5.api.URI | str) -> MMCorePlusProxy:
+    def instance(cls, uri: Pyro5.api.URI | str) -> _MMCorePlusProxy:
         """Return the instance for the given URI, creating it if necessary."""
         if str(uri) not in cls._instances:
             cls._instances[str(uri)] = cls(uri)
@@ -200,16 +199,16 @@ class ProxyHandler(ABC, Generic[PT]):
         return self._proxy_attr(name)
 
 
-class ClientMDARunner(ProxyHandler[MDARunnerProxy]):
+class ClientMDARunner(ProxyHandler[_MDARunnerProxy]):
     """A handle on a CMMCorePlus instance running outside of this process."""
 
     @property
-    def _proxy_type(self) -> type[MDARunnerProxy]:
-        return MDARunnerProxy
+    def _proxy_type(self) -> type[_MDARunnerProxy]:
+        return _MDARunnerProxy
 
 
 # TODO: Consider adding CMMCorePlus as supertype
-class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
+class ClientCMMCorePlus(ProxyHandler[_MMCorePlusProxy]):
     """A handle on a CMMCorePlus instance running outside of this process."""
 
     @overload
@@ -248,8 +247,8 @@ class ClientCMMCorePlus(ProxyHandler[MMCorePlusProxy]):
         self.mda = ClientMDARunner(uri=self.get_mda_runner_uri())
 
     @property
-    def _proxy_type(self) -> type[MMCorePlusProxy]:
-        return MMCorePlusProxy
+    def _proxy_type(self) -> type[_MMCorePlusProxy]:
+        return _MMCorePlusProxy
 
     # Overridden to provide a nice (although tehcnically wrong) type hint :)
     @override
